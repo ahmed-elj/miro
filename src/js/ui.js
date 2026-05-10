@@ -406,7 +406,7 @@ function setupKeyboard() {
 // ── Persistence ──
 export function saveToStorage() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ objects: objects, nid: state.nid }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ objects: objects, nid: state.nid, cam: { x: cam.x, y: cam.y, zoom: cam.zoom } }));
   } catch (e) {}
 }
 
@@ -419,6 +419,11 @@ export function loadFromStorage() {
       objects.length = 0;
       data.objects.forEach(function(o) { objects.push(o); });
       if (data.nid) state.nid = data.nid;
+      if (data.cam) {
+        cam.x = data.cam.x;
+        cam.y = data.cam.y;
+        cam.zoom = data.cam.zoom;
+      }
       return true;
     }
   } catch (e) {}
@@ -438,12 +443,14 @@ export function initUI() {
   setupKeyboard();
   updateCursor();
   updateZoomDisplay();
-  cam.x = window.innerWidth / 2;
-  cam.y = window.innerHeight / 2;
 
   if (loadFromStorage()) {
     refreshImgCache();
+    updateZoomDisplay();
     showToast('Restored previous session');
+  } else {
+    cam.x = window.innerWidth / 2;
+    cam.y = window.innerHeight / 2;
   }
 
   setInterval(saveToStorage, 3000);
