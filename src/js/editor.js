@@ -45,6 +45,10 @@ export function parseHtmlSpans(el, defColor) {
       if (tag === 'b' || tag === 'strong') nb = true;
       if (tag === 'i' || tag === 'em') ni = true;
       if (tag === 'u') nu = true;
+      if (tag === 'font') {
+        // <font color="..."> is produced by document.execCommand('foreColor')
+        if (node.getAttribute('color')) nc = rgbToHex(node.getAttribute('color'));
+      }
       if (tag === 'br') { spans.push({ text: '\n', bold: b, italic: it, underline: un, color: col }); return; }
       if ((tag === 'div' || tag === 'p') && spans.length > 0) {
         var last = spans[spans.length - 1];

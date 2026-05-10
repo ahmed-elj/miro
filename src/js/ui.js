@@ -76,8 +76,9 @@ function updatePopup() {
   document.getElementById('popFontSize').textContent = Math.round((obj ? obj.fontSize : 20 / cam.zoom) * cam.zoom);
   document.getElementById('popOpacity').value = obj && obj.opacity != null ? obj.opacity : 1;
   document.getElementById('popOpacityVal').textContent = Math.round((obj && obj.opacity != null ? obj.opacity : 1) * 100) + '%';
-  document.getElementById('popStrokeBtn').style.display = obj && obj.type === 'text' ? 'flex' : 'none';
-  if (obj && obj.type === 'text') {
+    document.getElementById('popStrokeBtn').style.display = obj && obj.type === 'text' ? 'flex' : 'none';
+    document.getElementById('popEditText').style.display = 'none';
+    if (obj && obj.type === 'text') {
     var fw2 = obj.fontWeight || 400;
     document.getElementById('popStrokeLabel').textContent = 'Font Weight';
     document.getElementById('popStrokeWeight').min = 100;
@@ -109,6 +110,7 @@ function updatePopup() {
   document.getElementById('popTextRow').style.display = selObj.type === 'text' ? 'flex' : 'none';
   document.getElementById('popColorRow').style.display = ['path','line','arrow','rect','ellipse','text'].indexOf(selObj.type) >= 0 ? 'flex' : 'none';
   document.getElementById('popStickyRow').style.display = selObj.type === 'sticky' ? 'flex' : 'none';
+  document.getElementById('popEditText').style.display = (selObj.type === 'text' || selObj.type === 'sticky') ? 'flex' : 'none';
   if (selObj.type === 'text') {
     var spans = getSpans(selObj);
     document.getElementById('popBold').classList.toggle('active', spans.some(function(sp) { return sp.bold; }));
@@ -311,6 +313,16 @@ function setupPopupHandlers() {
     saveState(); var tmp = objects[i]; objects[i] = objects[i-1]; objects[i-1] = tmp; requestRender();
   });
   document.getElementById('popDelete').addEventListener('click', function() { delSel(); });
+  // ── Edit text: enter editing mode so user can select characters and color them
+  document.getElementById('popEditText').addEventListener('click', function() {
+    var o = findObj(s.selectedId);
+    if (o && (o.type === 'text' || o.type === 'sticky')) startEditExisting(o);
+  });
+  // ── Custom color picker: apply color to selected text or object
+  document.getElementById('popCustomColor').addEventListener('input', function(e) {
+    applyPopColor(e.target.value);
+  });
+  document.getElementById('popCustomColor').addEventListener('pointerdown', function(e) { e.stopPropagation(); });
 }
 
 function setupToolbar() {
