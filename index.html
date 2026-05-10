@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infinite Whiteboard</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="cursor-crosshair">
+  <canvas id="board"></canvas>
+  <div id="eraserCursor"></div>
+  <input type="file" id="imageInput" accept="image/*">
+
+  <nav id="toolbar" aria-label="Drawing tools">
+    <button class="tool-btn active" data-tool="select" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i><span class="shortcut">V</span></button>
+    <button class="tool-btn" data-tool="hand" title="Pan (H)"><i class="fa-solid fa-hand"></i><span class="shortcut">H</span></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="pen" title="Pen (P)"><i class="fa-solid fa-pen"></i><span class="shortcut">P</span></button>
+    <button class="tool-btn" data-tool="eraser" title="Eraser (E)"><i class="fa-solid fa-eraser"></i><span class="shortcut">E</span></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="line" title="Line (L)"><i class="fa-solid fa-minus" style="transform:rotate(-45deg)"></i><span class="shortcut">L</span></button>
+    <button class="tool-btn" data-tool="arrow" title="Arrow (A)"><i class="fa-solid fa-arrow-right-long"></i><span class="shortcut">A</span></button>
+    <button class="tool-btn" data-tool="rect" title="Rectangle (R)"><i class="fa-regular fa-square"></i><span class="shortcut">R</span></button>
+    <button class="tool-btn" data-tool="ellipse" title="Ellipse (O)"><i class="fa-regular fa-circle"></i><span class="shortcut">O</span></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="text" title="Text (T)"><i class="fa-solid fa-t"></i><span class="shortcut">T</span></button>
+    <button class="tool-btn" data-tool="sticky" title="Sticky Note (S)"><i class="fa-solid fa-note-sticky"></i><span class="shortcut">S</span></button>
+    <button class="tool-btn" data-tool="image" title="Image"><i class="fa-solid fa-image"></i></button>
+  </nav>
+
+  <div id="topbar">
+    <div id="colorSwatches" style="display:flex;gap:4px;align-items:center;"></div>
+    <div class="opt-sep"></div>
+    <div id="strokeWidths" style="display:flex;gap:3px;align-items:center;"></div>
+    <div class="opt-sep"></div>
+    <button class="fill-toggle" id="fillToggle" title="Fill shapes"><i class="fa-solid fa-fill-drip"></i></button>
+    <div class="opt-sep"></div>
+    <button class="action-btn" id="undoBtn" title="Undo"><i class="fa-solid fa-rotate-left"></i></button>
+    <button class="action-btn" id="redoBtn" title="Redo"><i class="fa-solid fa-rotate-right"></i></button>
+    <button class="action-btn danger" id="clearBtn" title="Clear all"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+
+  <div id="itemPopup">
+    <div class="popup-row" id="popTextRow" style="display:none;">
+      <button class="pbtn" id="popBold" title="Bold (Ctrl+B)" style="font-weight:700;">B</button>
+      <button class="pbtn" id="popItalic" title="Italic (Ctrl+I)" style="font-style:italic;font-weight:400;">I</button>
+      <button class="pbtn" id="popUnder" title="Underline (Ctrl+U)" style="text-decoration:underline;font-weight:400;">U</button>
+      <div class="popup-sep"></div>
+      <button class="pbtn" id="popSizeDn" title="Smaller font" style="font-size:11px;font-weight:400;">A-</button>
+      <span id="popFontSize">20</span>
+      <button class="pbtn" id="popSizeUp" title="Bigger font" style="font-size:14px;font-weight:400;">A+</button>
+    </div>
+    <div class="popup-row" id="popColorRow"></div>
+    <div class="popup-row" id="popStickyRow" style="display:none;"></div>
+    <div class="popup-row">
+      <i class="fa-solid fa-droplet" style="font-size:10px;color:var(--muted);margin-right:2px;"></i>
+      <input type="range" id="popOpacity" min="0" max="1" step="0.05" value="1">
+      <div class="popup-sep"></div>
+      <button class="pbtn" id="popLayerUp" title="Bring forward"><i class="fa-solid fa-chevron-up" style="font-size:11px;"></i></button>
+      <button class="pbtn" id="popLayerDn" title="Send backward"><i class="fa-solid fa-chevron-down" style="font-size:11px;"></i></button>
+      <div class="popup-sep"></div>
+      <button class="pbtn danger" id="popDelete" title="Delete"><i class="fa-solid fa-trash-can" style="font-size:11px;"></i></button>
+    </div>
+  </div>
+
+  <div id="bottombar">
+    <button class="zoom-btn" id="zoomOut"><i class="fa-solid fa-minus"></i></button>
+    <span id="zoomLevel">100%</span>
+    <button class="zoom-btn" id="zoomIn"><i class="fa-solid fa-plus"></i></button>
+    <div class="opt-sep" style="height:20px;margin:0 2px;"></div>
+    <button class="zoom-btn" id="fitView" title="Fit to content"><i class="fa-solid fa-expand"></i></button>
+  </div>
+
+  <div id="textEditor" contenteditable="true" spellcheck="false"></div>
+  <textarea id="stickyEditor" spellcheck="false"></textarea>
+  <div id="toasts"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
