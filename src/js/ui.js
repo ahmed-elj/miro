@@ -72,23 +72,40 @@ function updatePopup() {
       document.getElementById('popItalic').classList.toggle('active', document.queryCommandState('italic'));
       document.getElementById('popUnder').classList.toggle('active', document.queryCommandState('underline'));
     } catch (e) {}
-    var obj = typeof s.editId === 'number' ? findObj(s.editId) : null;
-    document.getElementById('popFontSize').textContent = Math.round((obj ? obj.fontSize : 20 / cam.zoom) * cam.zoom);
-    return;
+  var obj = typeof s.editId === 'number' ? findObj(s.editId) : null;
+  document.getElementById('popFontSize').textContent = Math.round((obj ? obj.fontSize : 20 / cam.zoom) * cam.zoom);
+  document.getElementById('popOpacity').value = obj && obj.opacity != null ? obj.opacity : 1;
+  document.getElementById('popOpacityVal').textContent = Math.round((obj && obj.opacity != null ? obj.opacity : 1) * 100) + '%';
+  document.getElementById('popStrokeBtn').style.display = obj && obj.type === 'text' ? 'flex' : 'none';
+  if (obj && obj.type === 'text') {
+    var fw2 = obj.fontWeight || 400;
+    document.getElementById('popStrokeLabel').textContent = 'Font Weight';
+    document.getElementById('popStrokeWeight').min = 100;
+    document.getElementById('popStrokeWeight').max = 900;
+    document.getElementById('popStrokeWeight').step = 100;
+    document.getElementById('popStrokeWeight').value = fw2;
+    document.getElementById('popStrokeVal').textContent = fw2;
+  }
+  return;
   }
   if (isStickyEdit) { pop.classList.remove('visible'); return; }
-  if (s.selectedId === null || s.isEditing) { pop.classList.remove('visible'); return; }
+  if (s.selectedId === null || s.isEditing) { pop.classList.remove('visible'); s._lastPopupId = null; return; }
   var selObj = findObj(s.selectedId);
-  if (!selObj) { pop.classList.remove('visible'); return; }
+  if (!selObj) { pop.classList.remove('visible'); s._lastPopupId = null; return; }
   var b = getBounds(selObj);
   if (!b) { pop.classList.remove('visible'); return; }
-  var sp = w2s(b.x, b.y), sh = b.h * cam.zoom, ph2 = 140;
-  var top2 = sp.y - ph2 - 8;
-  if (top2 < 10) top2 = sp.y + sh + 10;
-  var left2 = sp.x;
-  if (left2 + 380 > window.innerWidth) left2 = window.innerWidth - 390;
-  if (left2 < 10) left2 = 10;
-  pop.style.left = left2 + 'px'; pop.style.top = top2 + 'px'; pop.classList.add('visible');
+  // Don't reposition popup while a dropdown slider is open
+  var dropdownOpen = document.querySelector('.pop-dropdown.open');
+  if (!dropdownOpen) {
+    var sp = w2s(b.x, b.y), sh = b.h * cam.zoom, ph2 = 140;
+    var top2 = sp.y - ph2 - 8;
+    if (top2 < 10) top2 = sp.y + sh + 10;
+    var left2 = sp.x;
+    if (left2 + 380 > window.innerWidth) left2 = window.innerWidth - 390;
+    if (left2 < 10) left2 = 10;
+    pop.style.left = left2 + 'px'; pop.style.top = top2 + 'px';
+  }
+  pop.classList.add('visible');
   document.getElementById('popTextRow').style.display = selObj.type === 'text' ? 'flex' : 'none';
   document.getElementById('popColorRow').style.display = ['path','line','arrow','rect','ellipse','text'].indexOf(selObj.type) >= 0 ? 'flex' : 'none';
   document.getElementById('popStickyRow').style.display = selObj.type === 'sticky' ? 'flex' : 'none';
@@ -100,6 +117,33 @@ function updatePopup() {
     document.getElementById('popFontSize').textContent = Math.round(selObj.fontSize * cam.zoom);
   }
   document.getElementById('popOpacity').value = selObj.opacity != null ? selObj.opacity : 1;
+  document.getElementById('popOpacityVal').textContent = Math.round((selObj.opacity != null ? selObj.opacity : 1) * 100) + '%';
+  // Stroke weight: show for stroked objects, hide for sticky/image
+  var hasStroke = ['path','line','arrow','rect','ellipse'].indexOf(selObj.type) >= 0;
+  document.getElementById('popStrokeBtn').style.display = hasStroke || selObj.type === 'text' ? 'flex' : 'none';
+  // Only reset slider values when the selection changes
+  if (s._lastPopupId !== selObj.id) {
+    s._lastPopupId = selObj.id;
+    if (hasStroke) {
+      s._strokeBase = selObj.strokeWidth || 2;
+      document.getElementById('popStrokeWeight').value = 0;
+      document.getElementById('popStrokeVal').textContent = '1x';
+    }
+    if (selObj.type === 'text') {
+      var fw = selObj.fontWeight || 400;
+      document.getElementById('popStrokeLabel').textContent = 'Font Weight';
+      document.getElementById('popStrokeWeight').min = 100;
+      document.getElementById('popStrokeWeight').max = 900;
+      document.getElementById('popStrokeWeight').step = 100;
+      document.getElementById('popStrokeWeight').value = fw;
+      document.getElementById('popStrokeVal').textContent = fw;
+    } else {
+      document.getElementById('popStrokeLabel').textContent = 'Stroke';
+      document.getElementById('popStrokeWeight').min = -2;
+      document.getElementById('popStrokeWeight').max = 2;
+      document.getElementById('popStrokeWeight').step = 0.1;
+    }
+  }
 }
 
 window.__updatePopup = updatePopup;
@@ -144,11 +188,35 @@ function setupPopupHandlers() {
   var pop = document.getElementById('itemPopup');
   pop.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
   pop.addEventListener('click', function(e) { e.stopPropagation(); });
-  pop.addEventListener('mousedown', function(e) { e.preventDefault(); });
+  pop.addEventListener('mousedown', function(e) {
+    // Allow range sliders to work normally; prevent default only on buttons
+    if (e.target.type !== 'range') e.preventDefault();
+  });
 
   function isTextEdit() {
     return s.isEditing && (s.editId === 'new-text' || (typeof s.editId === 'number' && findObj(s.editId) && findObj(s.editId).type === 'text'));
   }
+
+  // ── Dropdown toggles ──
+  function closeDropdowns() {
+    document.querySelectorAll('.pop-dropdown').forEach(function(d) { d.classList.remove('open'); });
+  }
+  function toggleDropdown(btnId, dropdownId) {
+    var dd = document.getElementById(dropdownId);
+    var isOpen = dd.classList.contains('open');
+    closeDropdowns();
+    if (!isOpen) dd.classList.add('open');
+  }
+  document.getElementById('popOpacityBtn').addEventListener('click', function(e) {
+    e.stopPropagation(); toggleDropdown('popOpacityBtn', 'popOpacityDropdown');
+  });
+  document.getElementById('popStrokeBtn').addEventListener('click', function(e) {
+    e.stopPropagation(); toggleDropdown('popStrokeBtn', 'popStrokeDropdown');
+  });
+  // Close dropdowns when clicking anywhere in the popup except inside a dropdown
+  pop.addEventListener('click', function(e) {
+    if (!e.target.closest('.pop-dropdown-wrap')) closeDropdowns();
+  });
 
   document.getElementById('popBold').addEventListener('click', function() {
     if (isTextEdit()) { document.getElementById('textEditor').focus(); document.execCommand('bold'); return; }
@@ -193,9 +261,45 @@ function setupPopupHandlers() {
     saveState(); o2.fontSize *= 1.25; requestRender();
   });
   document.getElementById('popOpacity').addEventListener('input', function(e) {
-    var o = findObj(s.selectedId); if (!o) return; o.opacity = +e.target.value; requestRender();
+    var val = +e.target.value;
+    document.getElementById('popOpacityVal').textContent = Math.round(val * 100) + '%';
+    // During text editing, apply to the editing text object
+    if (isTextEdit()) {
+      var o = typeof s.editId === 'number' ? findObj(s.editId) : null;
+      if (o) { o.opacity = val; requestRender(); }
+      return;
+    }
+    var o = findObj(s.selectedId); if (!o) return; o.opacity = val; requestRender();
   });
   document.getElementById('popOpacity').addEventListener('change', function() { saveState(); });
+  document.getElementById('popStrokeWeight').addEventListener('input', function(e) {
+    var val = +e.target.value;
+    var selObj = findObj(s.selectedId);
+    // During text editing — font weight is absolute
+    if (isTextEdit()) {
+      var o = typeof s.editId === 'number' ? findObj(s.editId) : null;
+      if (o && o.type === 'text') {
+        o.fontWeight = val;
+        document.getElementById('popStrokeVal').textContent = val;
+        requestRender();
+      }
+      return;
+    }
+    if (selObj && selObj.type === 'text') {
+      selObj.fontWeight = val;
+      document.getElementById('popStrokeVal').textContent = val;
+      requestRender();
+    } else if (selObj && selObj.strokeWidth != null) {
+      // Exponential mapping: slider -2..0..+2 → multiplier ¼x..1x..4x
+      var mult = Math.pow(2, val);
+      var base = s._strokeBase || selObj.strokeWidth || 2;
+      selObj.strokeWidth = base * mult;
+      var label = mult >= 1 ? mult.toFixed(1) + 'x' : '1/' + (1 / mult).toFixed(1) + 'x';
+      document.getElementById('popStrokeVal').textContent = label;
+      requestRender();
+    }
+  });
+  document.getElementById('popStrokeWeight').addEventListener('change', function() { saveState(); });
   document.getElementById('popLayerUp').addEventListener('click', function() {
     var i = objects.findIndex(function(x) { return x.id === s.selectedId; });
     if (i < 0 || i >= objects.length - 1) return;
@@ -312,6 +416,8 @@ function getWorldPoint(e) {
 
 function onPointerDown(e) {
   var s = state;
+  // Close any open popup dropdowns
+  document.querySelectorAll('.pop-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   if (s.isEditing) { finishEditing(); return; }
   s.dragMode = null; s.dragUndo = false;
   var r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;

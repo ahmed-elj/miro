@@ -39,6 +39,8 @@ export const state = {
   dragUndo: false,
   cycleHits: null,
   cycleIdx: -1,
+  _strokeBase: null,
+  _lastPopupId: null,
 
   isPan: false,
   panSt: null,

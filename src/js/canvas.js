@@ -132,6 +132,7 @@ function drawEllipse(c, o) {
 
 function drawText(c, o) {
   var spans = getSpans(o), rS = Math.max(1, o.fontSize), sc = o.fontSize / rS;
+  var baseW = o.fontWeight || 400;
   c.save(); c.translate(o.x, o.y); c.scale(sc, sc); c.textBaseline = 'middle';
   var lines = [[]];
   spans.forEach(function(s) {
@@ -141,13 +142,17 @@ function drawText(c, o) {
       if (p) lines[lines.length - 1].push({ text: p, bold: s.bold, italic: s.italic, underline: s.underline, color: s.color });
     });
   });
+  function spanFont(s) {
+    var w = s.bold ? '700' : String(baseW);
+    return (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Space Grotesk';
+  }
   // Measure max width for horizontal centering
   var lh = rS * 1.4;
   var maxW = 0;
   lines.forEach(function(line) {
     var lw = 0;
     line.forEach(function(s) {
-      c.font = (s.italic ? 'italic ' : 'normal ') + (s.bold ? '700' : '400') + ' ' + rS + 'px Space Grotesk';
+      c.font = spanFont(s);
       lw += c.measureText(s.text).width;
     });
     if (lw > maxW) maxW = lw;
@@ -157,10 +162,10 @@ function drawText(c, o) {
   var cy = -totalH / 2 + lh / 2;
   lines.forEach(function(line) {
     var lw = 0;
-    line.forEach(function(s) { c.font = (s.italic ? 'italic ' : 'normal ') + (s.bold ? '700' : '400') + ' ' + rS + 'px Space Grotesk'; lw += c.measureText(s.text).width; });
+    line.forEach(function(s) { c.font = spanFont(s); lw += c.measureText(s.text).width; });
     var cx = -lw / 2;
     line.forEach(function(s) {
-      c.font = (s.italic ? 'italic ' : 'normal ') + (s.bold ? '700' : '400') + ' ' + rS + 'px Space Grotesk';
+      c.font = spanFont(s);
       c.fillStyle = s.color;
       c.fillText(s.text, cx, cy);
       if (s.underline) {
@@ -173,7 +178,7 @@ function drawText(c, o) {
     });
     cy += lh;
   });
-c.restore();
+  c.restore();
 }
 
 function drawSticky(c, o) {

@@ -39,27 +39,29 @@ export function getBounds(obj) {
       return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
   case 'text': {
   var spans = getSpans(obj), rS = Math.max(1, obj.fontSize), sc = obj.fontSize / rS;
-      var tc = textMeasureCtx;
-      var lines = [[]];
-      spans.forEach(function(s) {
-        var pts = s.text.split('\n');
-        pts.forEach(function(pt, i) {
-          if (i > 0) lines.push([]);
-          if (pt) lines[lines.length - 1].push({ text: pt, bold: s.bold, italic: s.italic, color: s.color });
-        });
-      });
-      var maxW = 0;
-      lines.forEach(function(line) {
-        var lw = 0;
-        line.forEach(function(s) {
-          tc.font = (s.italic ? 'italic ' : 'normal ') + (s.bold ? '700' : '400') + ' ' + rS + 'px Space Grotesk';
-          lw += tc.measureText(s.text).width;
-        });
-        maxW = Math.max(maxW, lw);
-      });
-      var w = maxW * sc || 1, h = lines.length * rS * 1.4 * sc || obj.fontSize;
-      return { x: obj.x - w / 2, y: obj.y - h / 2, w: w, h: h };
-    }
+  var baseW = obj.fontWeight || 400;
+  var tc = textMeasureCtx;
+  var lines = [[]];
+  spans.forEach(function(s) {
+    var pts = s.text.split('\n');
+    pts.forEach(function(pt, i) {
+      if (i > 0) lines.push([]);
+      if (pt) lines[lines.length - 1].push({ text: pt, bold: s.bold, italic: s.italic, color: s.color });
+    });
+  });
+  var maxW = 0;
+  lines.forEach(function(line) {
+    var lw = 0;
+    line.forEach(function(s) {
+      var w = s.bold ? '700' : String(baseW);
+      tc.font = (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Space Grotesk';
+      lw += tc.measureText(s.text).width;
+    });
+    maxW = Math.max(maxW, lw);
+  });
+  var w = maxW * sc || 1, h = lines.length * rS * 1.4 * sc || obj.fontSize;
+  return { x: obj.x - w / 2, y: obj.y - h / 2, w: w, h: h };
+}
   }
   return null;
 }

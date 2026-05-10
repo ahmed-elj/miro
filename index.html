@@ -43,26 +43,44 @@
   </div>
 
   <div id="itemPopup">
-    <div class="popup-row" id="popTextRow" style="display:none;">
-      <button class="pbtn" id="popBold" title="Bold (Ctrl+B)" style="font-weight:700;">B</button>
-      <button class="pbtn" id="popItalic" title="Italic (Ctrl+I)" style="font-style:italic;font-weight:400;">I</button>
-      <button class="pbtn" id="popUnder" title="Underline (Ctrl+U)" style="text-decoration:underline;font-weight:400;">U</button>
-      <div class="popup-sep"></div>
-      <button class="pbtn" id="popSizeDn" title="Smaller font" style="font-size:11px;font-weight:400;">A-</button>
-      <span id="popFontSize">20</span>
-      <button class="pbtn" id="popSizeUp" title="Bigger font" style="font-size:14px;font-weight:400;">A+</button>
+  <div class="popup-row" id="popTextRow" style="display:none;">
+    <button class="pbtn" id="popBold" title="Bold (Ctrl+B)" style="font-weight:700;">B</button>
+    <button class="pbtn" id="popItalic" title="Italic (Ctrl+I)" style="font-style:italic;font-weight:400;">I</button>
+    <button class="pbtn" id="popUnder" title="Underline (Ctrl+U)" style="text-decoration:underline;font-weight:400;">U</button>
+    <div class="popup-sep"></div>
+    <button class="pbtn" id="popSizeDn" title="Smaller font" style="font-size:11px;font-weight:400;">A-</button>
+    <span id="popFontSize">20</span>
+    <button class="pbtn" id="popSizeUp" title="Bigger font" style="font-size:14px;font-weight:400;">A+</button>
+  </div>
+  <div class="popup-row" id="popColorRow"></div>
+  <div class="popup-row" id="popStickyRow" style="display:none;"></div>
+  <div class="popup-row">
+    <div class="pop-dropdown-wrap">
+      <button class="pbtn" id="popOpacityBtn" title="Opacity"><i class="fa-solid fa-droplet" style="font-size:11px;"></i></button>
+      <div class="pop-dropdown" id="popOpacityDropdown">
+        <div class="pop-dropdown-label">Opacity</div>
+        <div class="pop-dropdown-slider-row">
+          <input type="range" id="popOpacity" min="0" max="1" step="0.05" value="1">
+          <span id="popOpacityVal">100%</span>
+        </div>
+      </div>
     </div>
-    <div class="popup-row" id="popColorRow"></div>
-    <div class="popup-row" id="popStickyRow" style="display:none;"></div>
-    <div class="popup-row">
-      <i class="fa-solid fa-droplet" style="font-size:10px;color:var(--muted);margin-right:2px;"></i>
-      <input type="range" id="popOpacity" min="0" max="1" step="0.05" value="1">
-      <div class="popup-sep"></div>
-      <button class="pbtn" id="popLayerUp" title="Bring forward"><i class="fa-solid fa-chevron-up" style="font-size:11px;"></i></button>
-      <button class="pbtn" id="popLayerDn" title="Send backward"><i class="fa-solid fa-chevron-down" style="font-size:11px;"></i></button>
-      <div class="popup-sep"></div>
-      <button class="pbtn danger" id="popDelete" title="Delete"><i class="fa-solid fa-trash-can" style="font-size:11px;"></i></button>
+    <div class="pop-dropdown-wrap">
+      <button class="pbtn" id="popStrokeBtn" title="Stroke Weight"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>
+      <div class="pop-dropdown" id="popStrokeDropdown">
+        <div class="pop-dropdown-label" id="popStrokeLabel">Stroke</div>
+        <div class="pop-dropdown-slider-row">
+          <input type="range" id="popStrokeWeight" min="1" max="20" step="0.5" value="2">
+          <span id="popStrokeVal">2</span>
+        </div>
+      </div>
     </div>
+    <div class="popup-sep"></div>
+    <button class="pbtn" id="popLayerUp" title="Bring forward"><i class="fa-solid fa-chevron-up" style="font-size:11px;"></i></button>
+    <button class="pbtn" id="popLayerDn" title="Send backward"><i class="fa-solid fa-chevron-down" style="font-size:11px;"></i></button>
+    <div class="popup-sep"></div>
+    <button class="pbtn danger" id="popDelete" title="Delete"><i class="fa-solid fa-trash-can" style="font-size:11px;"></i></button>
+  </div>
   </div>
 
   <div id="bottombar">

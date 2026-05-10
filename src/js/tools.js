@@ -50,16 +50,17 @@ export function onSelectDown(wp, sx, sy) {
       s.dragUndo = false;
       s.cycleHits = hits;
       s.cycleIdx = selInHits;
-    } else {
-      // New area — select topmost object
-      s.selectedId = hits[0].id;
-      s.dragMode = 'move';
-      s.dragSW = wp;
-      s.dragSnap = JSON.parse(JSON.stringify(hits[0]));
-      s.dragUndo = false;
-      s.cycleHits = null;
-      s.cycleIdx = -1;
-    }
+  } else {
+    // New area — select topmost object
+    s.selectedId = hits[0].id;
+    s.dragMode = 'move';
+    s.dragSW = wp;
+    s.dragSnap = JSON.parse(JSON.stringify(hits[0]));
+    s.dragUndo = false;
+    s.cycleHits = null;
+    s.cycleIdx = -1;
+    s._lastPopupId = null;
+  }
     requestRender();
   } else if (s.selectedId !== null) {
     s.selectedId = null;
@@ -76,6 +77,7 @@ export function cycleSelect() {
   var nextHit = hits[nextIdx];
   s.selectedId = nextHit.id;
   s.cycleIdx = nextIdx;
+  s._lastPopupId = null;
   requestRender();
 }
 
