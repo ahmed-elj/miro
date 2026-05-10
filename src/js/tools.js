@@ -13,6 +13,7 @@ import { saveState, addObj, delSel, findObj } from './undo.js';
 // ── Select tool: pointer down ──
 export function onSelectDown(wp, sx, sy) {
   var s = state;
+  // Check resize handles on currently selected object first
   if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
     if (obj) {
@@ -26,21 +27,56 @@ export function onSelectDown(wp, sx, sy) {
       }
     }
   }
-  var hit = null;
+  // Collect all objects under the click point (top-to-bottom order)
+  var hits = [];
   for (var i = objects.length - 1; i >= 0; i--) {
-    if (hitTest(objects[i], wp.x, wp.y)) { hit = objects[i]; break; }
+    if (hitTest(objects[i], wp.x, wp.y)) hits.push(objects[i]);
   }
-  if (hit) {
-    s.selectedId = hit.id;
-    s.dragMode = 'move';
-    s.dragSW = wp;
-    s.dragSnap = JSON.parse(JSON.stringify(hit));
-    s.dragUndo = false;
+  if (hits.length) {
+    // If the already-selected object is under the cursor, allow dragging it.
+    // Cycle to the next object only on click-up (no drag movement).
+    var selObj = s.selectedId !== null ? findObj(s.selectedId) : null;
+    var selInHits = -1;
+    if (selObj) {
+      for (var j = 0; j < hits.length; j++) {
+        if (hits[j].id === selObj.id) { selInHits = j; break; }
+      }
+    }
+    if (selInHits >= 0) {
+      // Set up drag on current selection; defer cycle to pointer up
+      s.dragMode = 'move';
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(selObj));
+      s.dragUndo = false;
+      s.cycleHits = hits;
+      s.cycleIdx = selInHits;
+    } else {
+      // New area — select topmost object
+      s.selectedId = hits[0].id;
+      s.dragMode = 'move';
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(hits[0]));
+      s.dragUndo = false;
+      s.cycleHits = null;
+      s.cycleIdx = -1;
+    }
     requestRender();
   } else if (s.selectedId !== null) {
     s.selectedId = null;
     requestRender();
   }
+}
+
+// ── Cycle selection on click (no drag) ──
+export function cycleSelect() {
+  var s = state;
+  if (!s.cycleHits || s.cycleIdx < 0) return;
+  var hits = s.cycleHits;
+  var nextIdx = s.cycleIdx + 1 < hits.length ? s.cycleIdx + 1 : 0;
+  var nextHit = hits[nextIdx];
+  s.selectedId = nextHit.id;
+  s.cycleIdx = nextIdx;
+  requestRender();
 }
 
 // ── Drag handling ──

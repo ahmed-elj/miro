@@ -14,6 +14,7 @@ import {
   startErase, eraseAt, finishErase, startShape, finishShape,
   startTextCreate, startStickyCreate, startEditExisting,
   finishEditing, updateEditorFS, updateEditorPosition,
+  cycleSelect,
   zoomAt, updateZoomDisplay, resetZoom, fitView,
   clearAll, insertImg, exportPNG,
 } from './tools.js';
@@ -354,7 +355,7 @@ function onPointerMove(e) {
   }
 }
 
-function onPointerUp() {
+function onPointerUp(e) {
   var s = state;
   if (s.isPan) { s.isPan = false; updateCursor(); return; }
   if (s.isDrawing) {
@@ -362,7 +363,12 @@ function onPointerUp() {
     else if (s.curTool === 'eraser') finishErase();
     else if (['line','arrow','rect','ellipse'].indexOf(s.curTool) >= 0) finishShape();
   }
-  if (s.dragMode) { s.dragMode = null; s.dragSW = null; s.dragSnap = null; s.dragUndo = false; }
+  if (s.dragMode) {
+    // If no undo was saved (no movement happened), treat as a click — cycle selection
+    if (!s.dragUndo && s.cycleHits) cycleSelect();
+    s.dragMode = null; s.dragSW = null; s.dragSnap = null; s.dragUndo = false;
+    s.cycleHits = null; s.cycleIdx = -1;
+  }
 }
 
 function onWheel(e) {

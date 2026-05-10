@@ -37,6 +37,8 @@ export const state = {
   dragSW: null,
   dragSnap: null,
   dragUndo: false,
+  cycleHits: null,
+  cycleIdx: -1,
 
   isPan: false,
   panSt: null,
