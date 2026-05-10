@@ -131,7 +131,7 @@ function drawEllipse(c, o) {
 }
 
 function drawText(c, o) {
-  var spans = getSpans(o), minR = 14, rS = Math.max(minR, o.fontSize), sc = o.fontSize / rS;
+  var spans = getSpans(o), rS = Math.max(1, o.fontSize), sc = o.fontSize / rS;
   c.save(); c.translate(o.x, o.y); c.scale(sc, sc); c.textBaseline = 'middle';
   var lines = [[]];
   spans.forEach(function(s) {

@@ -37,8 +37,8 @@ export function getBounds(obj) {
     case 'sticky':
     case 'image':
       return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
-    case 'text': {
-      var spans = getSpans(obj), minR = 14, rS = Math.max(minR, obj.fontSize), sc = obj.fontSize / rS;
+  case 'text': {
+  var spans = getSpans(obj), rS = Math.max(1, obj.fontSize), sc = obj.fontSize / rS;
       var tc = textMeasureCtx;
       var lines = [[]];
       spans.forEach(function(s) {
@@ -70,8 +70,8 @@ export function hitTest(obj, wx, wy) {
     case 'path': return hitTestPath(obj, wx, wy, pad);
     case 'line':
     case 'arrow': return hitTestLine(obj, wx, wy, pad);
-    case 'rect':
-    case 'ellipse':
+    case 'rect': return hitTestRect(obj, wx, wy, pad);
+    case 'ellipse': return hitTestEllipse(obj, wx, wy, pad);
     case 'sticky':
     case 'image':
       return wx >= obj.x - pad && wx <= obj.x + obj.w + pad &&
@@ -95,6 +95,37 @@ function hitTestPath(o, wx, wy, pad) {
 
 function hitTestLine(o, wx, wy, pad) {
   return ptSegDist(wx, wy, o.x1, o.y1, o.x2, o.y2) < Math.max(pad, (o.strokeWidth || 1) / 2 + pad);
+}
+
+function hitTestRect(o, wx, wy, pad) {
+  var t = Math.max(pad, (o.strokeWidth || 1) / 2 + pad);
+  // If filled, any point inside the rect is a hit
+  if (o.fill) {
+    return wx >= o.x - t && wx <= o.x + o.w + t &&
+           wy >= o.y - t && wy <= o.y + o.h + t;
+  }
+  // Stroke-only: hit only if near one of the four edges
+  var inX = wx >= o.x - t && wx <= o.x + o.w + t;
+  var inY = wy >= o.y - t && wy <= o.y + o.h + t;
+  var nearTop = Math.abs(wy - o.y) < t;
+  var nearBot = Math.abs(wy - (o.y + o.h)) < t;
+  var nearLeft = Math.abs(wx - o.x) < t;
+  var nearRight = Math.abs(wx - (o.x + o.w)) < t;
+  return (inX && (nearTop || nearBot)) || (inY && (nearLeft || nearRight));
+}
+
+function hitTestEllipse(o, wx, wy, pad) {
+  var cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  var rx = Math.max(0.1, Math.abs(o.w / 2)), ry = Math.max(0.1, Math.abs(o.h / 2));
+  var dx = (wx - cx) / rx, dy = (wy - cy) / ry;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+  var t = Math.max(pad, (o.strokeWidth || 1) / 2 + pad) / Math.min(rx, ry);
+  // If filled, any point inside the ellipse is a hit
+  if (o.fill) {
+    return dist <= 1 + t;
+  }
+  // Stroke-only: hit only if near the ellipse border
+  return Math.abs(dist - 1) < t;
 }
 
 export function hitHandle(obj, wx, wy) {
