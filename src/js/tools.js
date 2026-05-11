@@ -423,9 +423,28 @@ export function fitView() {
   });
   if (a === Infinity) return;
   var pd = 80, cw = c2 - a, ch = d - b;
-  var s = Math.min((window.innerWidth - pd * 2) / Math.max(1, cw), (window.innerHeight - pd * 2) / Math.max(1, ch), 3);
+  var sx = (window.innerWidth - pd * 2) / Math.max(1, cw);
+  var sy = (window.innerHeight - pd * 2) / Math.max(1, ch);
+  var s = Math.min(sx, sy);
   cam.zoom = s; cam.x = window.innerWidth / 2 - (a + cw / 2) * s; cam.y = window.innerHeight / 2 - (b + ch / 2) * s;
   updateZoomDisplay(); requestRender();
+}
+
+export function locateObjects() {
+  if (!objects.length) { showToast('No objects on canvas'); return; }
+  fitView();
+  state.locateEnd = performance.now() + 2500;
+  animateLocate();
+}
+
+function animateLocate() {
+  if (performance.now() >= state.locateEnd) {
+    state.locateEnd = 0;
+    requestRender();
+    return;
+  }
+  requestRender();
+  requestAnimationFrame(animateLocate);
 }
 
 export function clearAll() {

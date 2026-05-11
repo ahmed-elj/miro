@@ -56,6 +56,8 @@ export const state = {
   editId: null,
 
   nid: 1,
+
+  locateEnd: 0,
 };
 
 export function gid() { return state.nid++; }

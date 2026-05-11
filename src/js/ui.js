@@ -15,7 +15,7 @@ import {
   startTextCreate, startStickyCreate, startEditExisting,
   finishEditing, updateEditorFS, updateEditorPosition,
   cycleSelect,
-  zoomAt, updateZoomDisplay, resetZoom, fitView,
+  zoomAt, updateZoomDisplay, resetZoom, fitView, locateObjects,
   clearAll, insertImg, exportPNG,
 } from './tools.js';
 
@@ -372,6 +372,7 @@ function setupBottombar() {
   document.getElementById('zoomOut').addEventListener('click', function() { zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.25); });
   document.getElementById('zoomLevel').addEventListener('click', resetZoom);
   document.getElementById('fitView').addEventListener('click', fitView);
+  document.getElementById('locateBtn').addEventListener('click', locateObjects);
 }
 
 // ── Pointer events ──
@@ -511,6 +512,7 @@ function setupKeyboard() {
     if ((e.ctrlKey || e.metaKey) && e.key === '=') { e.preventDefault(); zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); resetZoom(); }
+  if (e.shiftKey && e.code === 'KeyF') { e.preventDefault(); locateObjects(); }
   });
   window.addEventListener('keyup', function(e) {
     if (e.code === 'Space' && s.spaceHeld) {

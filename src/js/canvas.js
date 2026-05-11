@@ -37,6 +37,7 @@ function render() {
   }
   if (s.isDrawing) drawPreview(ctx);
   if (s.selectedId !== null && !s.isEditing) drawHandles(ctx);
+  if (s.locateEnd > 0) drawLocateHighlights(ctx);
   ctx.restore();
   if (!objects.length && !s.isDrawing) {
     ctx.fillStyle = '#3a3a44';
@@ -278,5 +279,29 @@ function drawHandles(c) {
     c.fillStyle = '#10b981'; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
     c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
+  c.restore();
+}
+
+function drawLocateHighlights(c) {
+  var s = state;
+  var remaining = s.locateEnd - performance.now();
+  if (remaining <= 0) { s.locateEnd = 0; return; }
+  // Fade out over last 800ms; pulse via sin wave
+  var fade = remaining < 800 ? remaining / 800 : 1;
+  var pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+  var alpha = fade * (0.4 + 0.6 * pulse);
+  var iz = 1 / cam.zoom;
+  var pad = 6 * iz;
+  c.save();
+  c.strokeStyle = 'rgba(16, 185, 129, ' + alpha.toFixed(3) + ')';
+  c.lineWidth = 2.5 * iz;
+  c.setLineDash([8 * iz, 4 * iz]);
+  c.lineDashOffset = -performance.now() * 0.03;
+  for (var i = 0; i < objects.length; i++) {
+    var b = getBounds(objects[i]);
+    if (!b) continue;
+    c.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+  }
+  c.setLineDash([]);
   c.restore();
 }
