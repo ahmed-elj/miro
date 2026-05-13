@@ -3,7 +3,7 @@
 */
 
 import { cam, objects } from './state.js';
-import { HANDLE_HIT } from './constants.js';
+import { HANDLE_HIT, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
 import { ptSegDist } from './utils.js';
 import { getSpans } from './editor.js';
 
@@ -66,7 +66,59 @@ export function getBounds(obj) {
   return null;
 }
 
+export function getCenter(obj) {
+  var b = getBounds(obj);
+  if (!b) return null;
+  return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+}
+
+export function rotatePoint(x, y, cx, cy, rot) {
+  if (!rot) return { x: x, y: y };
+  var cos = Math.cos(rot), sin = Math.sin(rot);
+  var dx = x - cx, dy = y - cy;
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+}
+
+export function inverseRotatePoint(x, y, cx, cy, rot) {
+  return rotatePoint(x, y, cx, cy, -rot);
+}
+
+export function getRotatedCorners(obj) {
+  var b = getBounds(obj);
+  if (!b) return null;
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  var rot = obj.rotation || 0;
+  return [
+    rotatePoint(b.x, b.y, cx, cy, rot),
+    rotatePoint(b.x + b.w, b.y, cx, cy, rot),
+    rotatePoint(b.x + b.w, b.y + b.h, cx, cy, rot),
+    rotatePoint(b.x, b.y + b.h, cx, cy, rot),
+  ];
+}
+
+export function getRotatedBounds(obj) {
+  var cs = getRotatedCorners(obj);
+  if (!cs) return null;
+  var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
+  cs.forEach(function(p) {
+    ax = Math.min(ax, p.x); ay = Math.min(ay, p.y);
+    bx = Math.max(bx, p.x); by = Math.max(by, p.y);
+  });
+  return { x: ax, y: ay, w: bx - ax, h: by - ay };
+}
+
 export function hitTest(obj, wx, wy) {
+  // If object is rotated, inverse-rotate the test point around the bounding box center
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var b = getBounds(obj);
+    if (b) {
+      var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      var p = inverseRotatePoint(wx, wy, cx, cy, rot);
+      wx = p.x;
+      wy = p.y;
+    }
+  }
   var pad = Math.max(8, (obj.strokeWidth || 2)) / cam.zoom;
   switch (obj.type) {
     case 'path': return hitTestPath(obj, wx, wy, pad);
@@ -133,6 +185,14 @@ function hitTestEllipse(o, wx, wy, pad) {
 export function hitHandle(obj, wx, wy) {
   var b = getBounds(obj);
   if (!b) return null;
+  // If object is rotated, inverse-rotate the test point around bounding box center
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    var p = inverseRotatePoint(wx, wy, cx, cy, rot);
+    wx = p.x;
+    wy = p.y;
+  }
   var hs = HANDLE_HIT / cam.zoom;
   var cs = [
     { k: 'resize-tl', x: b.x, y: b.y },
@@ -153,7 +213,7 @@ export function getGroupBounds(ids) {
   ids.forEach(function(id) {
     for (var i = 0; i < objects.length; i++) {
       if (objects[i].id === id) {
-        var b = getBounds(objects[i]);
+          var b = getRotatedBounds(objects[i]);
         if (b) {
           found = true;
           ax = Math.min(ax, b.x); ay = Math.min(ay, b.y);
@@ -165,4 +225,40 @@ export function getGroupBounds(ids) {
   });
   if (!found) return null;
   return { x: ax, y: ay, w: bx - ax, h: by - ay };
+}
+
+// ── Hit-test the rotation handle for a single object ──
+// Returns true if (wx, wy) is within the rotation handle circle.
+// The handle is at top-center of the bounding box, offset upward by ROTATE_HANDLE_DIST (screen px).
+// If the object is rotated, we inverse-rotate the test point into the object's local frame.
+export function hitRotateHandle(obj, wx, wy) {
+  var b = getBounds(obj);
+  if (!b) return false;
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  var rot = obj.rotation || 0;
+  // Inverse-rotate the test point into the object's local coordinate frame
+  var lwx = wx, lwy = wy;
+  if (rot) {
+    var p = inverseRotatePoint(wx, wy, cx, cy, rot);
+    lwx = p.x;
+    lwy = p.y;
+  }
+  var iz = 1 / cam.zoom;
+  var rhx = b.x + b.w / 2;
+  var rhy = b.y - ROTATE_HANDLE_DIST * iz;
+  var hr = Math.max(ROTATE_HANDLE_RADIUS * iz, HANDLE_HIT / cam.zoom / 2);
+  var dx2 = lwx - rhx, dy2 = lwy - rhy;
+  return dx2 * dx2 + dy2 * dy2 < hr * hr;
+}
+
+// ── Hit-test the rotation handle for a group bounding box ──
+// Group handles are not rotated, so no inverse-rotation needed.
+export function hitRotateHandleBounds(b, wx, wy) {
+  if (!b) return false;
+  var iz = 1 / cam.zoom;
+  var rhx = b.x + b.w / 2;
+  var rhy = b.y - ROTATE_HANDLE_DIST * iz;
+  var hr = Math.max(ROTATE_HANDLE_RADIUS * iz, HANDLE_HIT / cam.zoom / 2);
+  var dx = wx - rhx, dy = wy - rhy;
+  return dx * dx + dy * dy < hr * hr;
 }

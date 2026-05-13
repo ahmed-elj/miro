@@ -30,6 +30,7 @@ export const state = {
   multiDragSnaps: null, // map of id → deep-clone snapshot for multi-object drag
   dragRotStart: null, // angle at start of rotation drag (radians)
   dragRotSnaps: null, // map of id → { rotation, cx, cy } snapshot for rotation
+  dragGroupBounds: null, // snapshot of group bounds at drag start
   curTool: 'select',
   curColor: '#e4e4e8',
   curStroke: 2,

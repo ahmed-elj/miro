@@ -6,7 +6,7 @@ import { cam, objects, imgCache, state, gid } from './state.js';
 import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT } from './constants.js';
 import { s2w, w2s, showToast } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
-import { getBounds, hitTest, hitHandle, getGroupBounds } from './objects.js';
+import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, delSel, findObj } from './undo.js';
 
@@ -45,15 +45,51 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     return;
   }
 
+  // Check rotation handle first (it sits above resize handles)
+  if (s.selectedIds.length > 1) {
+    var gb = getGroupBounds(s.selectedIds);
+    if (gb && hitRotateHandleBounds(gb, wp.x, wp.y)) {
+      s.dragMode = 'rotate-multi';
+      s.dragSW = wp;
+      s.dragUndo = false;
+      s.dragGroupBounds = { x: gb.x, y: gb.y, w: gb.w, h: gb.h };
+      s.dragRotStart = Math.atan2(wp.y - (gb.y + gb.h / 2), wp.x - (gb.x + gb.w / 2));
+      s.dragRotSnaps = {};
+      s.selectedIds.forEach(function(id) {
+        var o = findObj(id);
+        if (o) {
+          var snap = JSON.parse(JSON.stringify(o));
+          var b = getBounds(o);
+          snap.cx = b ? b.x + b.w / 2 : 0;
+          snap.cy = b ? b.y + b.h / 2 : 0;
+          s.dragRotSnaps[id] = snap;
+        }
+      });
+      return;
+    }
+  } else if (s.selectedId !== null) {
+    var obj = findObj(s.selectedId);
+    if (obj && hitRotateHandle(obj, wp.x, wp.y)) {
+      s.dragMode = 'rotate';
+      s.dragSW = wp;
+      s.dragUndo = false;
+      var ob = getBounds(obj);
+      s.dragRotStart = Math.atan2(wp.y - (ob.y + ob.h / 2), wp.x - (ob.x + ob.w / 2));
+      s.dragSnap = JSON.parse(JSON.stringify(obj));
+      return;
+    }
+  }
+
   // Check resize handles on the group bounding box (multiselect) or single object
   if (s.selectedIds.length > 1) {
     var gb = getGroupBounds(s.selectedIds);
     if (gb) {
       var gh = hitHandleBounds(gb, wp.x, wp.y);
-      if (gh) {
+          if (gh) {
         s.dragMode = gh;
         s.dragSW = wp;
         s.dragUndo = false;
+        s.dragGroupBounds = { x: gb.x, y: gb.y, w: gb.w, h: gb.h };
         // Snapshot all selected objects for group resize
         s.multiDragSnaps = {};
         s.selectedIds.forEach(function(id) {
@@ -182,7 +218,7 @@ export function finishBoxSelect(shiftKey) {
   // Find objects whose bounds intersect the marquee rect
   var newIds = [];
   objects.forEach(function(obj) {
-    var b = getBounds(obj);
+    var b = getRotatedBounds(obj);
     if (!b) return;
     // Check if bounds overlap the marquee rectangle
     if (b.x < bx + bw && b.x + b.w > bx && b.y < by + bh && b.y + b.h > by) {
@@ -241,14 +277,14 @@ function moveObjectBy(obj, snap, dx, dy) {
 
 // ── Compute the unified bounding box of a set of object IDs (in objects.js) ──
 
-// ── Compute group bounds from snapshot map (for resize, uses live getBounds on snaps) ──
+// ── Compute group bounds from snapshot map (for resize, includes rotation) ──
 function getGroupBoundsFromSnaps(snapsMap, ids) {
   var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
   var found = false;
   ids.forEach(function(id) {
     var snap = snapsMap[id];
     if (!snap) return;
-    var b = getBounds(snap);
+    var b = getRotatedBounds(snap);
     if (!b) return;
     found = true;
     ax = Math.min(ax, b.x); ay = Math.min(ay, b.y);
@@ -330,9 +366,62 @@ export function handleDrag(wp) {
     return;
   }
 
+  // Single-object rotation
+  if (s.dragMode === 'rotate' && s.dragSnap) {
+    var obj = findObj(s.selectedId);
+    if (!obj) return;
+    var ob = getBounds(s.dragSnap);
+    if (!ob) return;
+    var cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
+    var angle = Math.atan2(wp.y - cy, wp.x - cx);
+    var delta = angle - s.dragRotStart;
+    obj.rotation = (s.dragSnap.rotation || 0) + delta;
+    requestRender();
+    return;
+  }
+
+  // Multi-object rotation (rotate all around group center)
+  if (s.dragMode === 'rotate-multi' && s.dragRotSnaps) {
+    var gb = s.dragGroupBounds;
+    if (!gb) return;
+    var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
+    var angle = Math.atan2(wp.y - gcy, wp.x - gcx);
+    var delta = angle - s.dragRotStart;
+    s.selectedIds.forEach(function(id) {
+      var o = findObj(id);
+      var snap = s.dragRotSnaps[id];
+      if (!o || !snap) return;
+      // Update rotation from snapshot
+      o.rotation = (snap.rotation || 0) + delta;
+      // Rotate position around group center using snapshot positions
+      // snap.cx/cy will be set at drag start
+      var offx = snap.cx - gcx, offy = snap.cy - gcy;
+      var cos = Math.cos(delta), sin = Math.sin(delta);
+      var newCx = gcx + offx * cos - offy * sin;
+      var newCy = gcy + offx * sin + offy * cos;
+      var moveDx = newCx - snap.cx, moveDy = newCy - snap.cy;
+      // Apply movement from snapshot position
+      switch (o.type) {
+        case 'path':
+          o.points = snap.points.map(function(p) { return { x: p.x + moveDx, y: p.y + moveDy }; });
+          break;
+        case 'line':
+        case 'arrow':
+          o.x1 = snap.x1 + moveDx; o.y1 = snap.y1 + moveDy;
+          o.x2 = snap.x2 + moveDx; o.y2 = snap.y2 + moveDy;
+          break;
+        default:
+          o.x = snap.x + moveDx; o.y = snap.y + moveDy;
+          break;
+      }
+    });
+    requestRender();
+    return;
+  }
+
   // Multi-object group resize
   if (s.dragMode && s.dragMode.startsWith('resize-') && s.multiDragSnaps && s.selectedIds.length > 1) {
-    var gb = getGroupBounds(s.selectedIds);
+    var gb = s.dragGroupBounds || getGroupBounds(s.selectedIds);
     if (!gb || gb.w < 0.01 || gb.h < 0.01) return;
     // Use the snap state to get the original group bounds
     var snapIds = Object.keys(s.multiDragSnaps).map(Number);
@@ -371,6 +460,17 @@ export function handleDrag(wp) {
   var obj = findObj(s.selectedId);
   if (!obj || !s.dragSnap) return;
   var snap = s.dragSnap;
+
+  if (s.dragMode && s.dragMode.startsWith('resize-') && (snap.rotation || 0)) {
+    var rb = getBounds(snap);
+    if (rb) {
+      var rcx = rb.x + rb.w / 2, rcy = rb.y + rb.h / 2;
+      var startLocal = inverseRotatePoint(s.dragSW.x, s.dragSW.y, rcx, rcy, snap.rotation || 0);
+      var curLocal = inverseRotatePoint(wp.x, wp.y, rcx, rcy, snap.rotation || 0);
+      dx = curLocal.x - startLocal.x;
+      dy = curLocal.y - startLocal.y;
+    }
+  }
 
   if (s.dragMode === 'move') {
     moveObjectBy(obj, snap, dx, dy);
@@ -517,10 +617,10 @@ export function finishShape() {
     s.drawSt = null; s.drawCur = null; return;
   }
   var sw = s.curStroke / cam.zoom;
-  if (s.curTool === 'line') addObj({ type: 'line', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1 });
-  else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1 });
-  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1 });
-  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1 });
+  if (s.curTool === 'line') addObj({ type: 'line', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
+  else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
+  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
+  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
   s.drawSt = null;
   s.drawCur = null;
 }
@@ -605,11 +705,11 @@ export function finishEditing() {
   if (s.editId === 'new-text' && teVisible) {
     var spans = parseHtmlSpans(te, te.dataset.color || s.curColor);
     var text = spans.map(function(sp) { return sp.text; }).join('').trim();
-    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, color: te.dataset.color || s.curColor, opacity: 1 });
+    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, color: te.dataset.color || s.curColor, opacity: 1, rotation: 0 });
     te.style.display = 'none'; te.innerHTML = ''; te.style.transform = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
-    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1 });
+    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1, rotation: 0 });
     se.style.display = 'none'; se.value = '';
   } else if (typeof s.editId === 'number') {
     var obj = findObj(s.editId);
@@ -693,7 +793,7 @@ export function fitView() {
   if (!objects.length) { resetZoom(); return; }
   var a = Infinity, b = Infinity, c2 = -Infinity, d = -Infinity;
   objects.forEach(function(o) {
-    var bb = getBounds(o); if (!bb) return;
+    var bb = getRotatedBounds(o); if (!bb) return;
     a = Math.min(a, bb.x); b = Math.min(b, bb.y);
     c2 = Math.max(c2, bb.x + bb.w); d = Math.max(d, bb.y + bb.h);
   });
@@ -741,7 +841,7 @@ export function insertImg(file, wp) {
       if (asp >= 1) { w = Math.min(mw, img.naturalWidth / cam.zoom); h = w / asp; }
       else { h = Math.min(mw, img.naturalHeight / cam.zoom); w = h * asp; }
       var id = gid(); imgCache[id] = img;
-      addObj({ type: 'image', id: id, x: wp.x - w / 2, y: wp.y - h / 2, w: w, h: h, src: e.target.result, opacity: 1 });
+      addObj({ type: 'image', id: id, x: wp.x - w / 2, y: wp.y - h / 2, w: w, h: h, src: e.target.result, opacity: 1, rotation: 0 });
       showToast('Image added');
     };
     img.src = e.target.result;
@@ -754,7 +854,7 @@ export function exportPNG() {
   if (!objects.length) { showToast('Nothing to export'); return; }
   var a = Infinity, b = Infinity, c2 = -Infinity, d = -Infinity;
   objects.forEach(function(o) {
-    var bb = getBounds(o); if (!bb) return;
+    var bb = getRotatedBounds(o); if (!bb) return;
     a = Math.min(a, bb.x - 20); b = Math.min(b, bb.y - 20);
     c2 = Math.max(c2, bb.x + bb.w + 20); d = Math.max(d, bb.y + bb.h + 20);
   });

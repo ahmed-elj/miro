@@ -5,10 +5,10 @@
 import {
   cam, ctx, dpr, canvas, objects, imgCache, state,
 } from './state.js';
-import { HANDLE_SIZE } from './constants.js';
+import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
 import { s2w, roundedRect, wrapLine } from './utils.js';
 import { getSpans } from './editor.js';
-import { getBounds, getGroupBounds } from './objects.js';
+import { getBounds, getGroupBounds, getRotatedBounds } from './objects.js';
 
 let rafPending = false;
 export function requestRender() {
@@ -74,6 +74,17 @@ export function drawObject(c, obj) {
   c.globalAlpha = obj.opacity != null ? obj.opacity : 1;
   c.lineCap = 'round';
   c.lineJoin = 'round';
+  // Apply rotation around bounding box center
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var b = getBounds(obj);
+    if (b) {
+      var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      c.translate(cx, cy);
+      c.rotate(rot);
+      c.translate(-cx, -cy);
+    }
+  }
   switch (obj.type) {
     case 'path': drawPath(c, obj); break;
     case 'line': drawLine(c, obj); break;
@@ -274,6 +285,14 @@ function drawHandles(c) {
   if (!b) return;
   c.save();
   var iz = 1 / cam.zoom;
+  // Apply rotation to the handles if object is rotated
+  var rot = obj.rotation || 0;
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (rot) {
+    c.translate(cx, cy);
+    c.rotate(rot);
+    c.translate(-cx, -cy);
+  }
   c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
@@ -281,6 +300,14 @@ function drawHandles(c) {
     c.fillStyle = '#10b981'; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
     c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
+  // Rotation gizmo: line from top-center to rotation handle circle
+  var tcx = b.x + b.w / 2, tcy = b.y;
+  var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;
+  c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
+  c.beginPath(); c.moveTo(tcx, tcy); c.lineTo(rhx, rhy); c.stroke();
+  c.beginPath(); c.arc(rhx, rhy, ROTATE_HANDLE_RADIUS * iz, 0, Math.PI * 2);
+  c.fillStyle = '#10b981'; c.fill();
+  c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.stroke();
   c.restore();
 }
 
@@ -300,9 +327,21 @@ function drawLocateHighlights(c) {
   c.setLineDash([8 * iz, 4 * iz]);
   c.lineDashOffset = -performance.now() * 0.03;
   for (var i = 0; i < objects.length; i++) {
-    var b = getBounds(objects[i]);
+    var b = getRotatedBounds(objects[i]);
     if (!b) continue;
-    c.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    c.save();
+    var obj = objects[i], rot = obj.rotation || 0;
+    if (rot) {
+      var ub = getBounds(obj);
+      if (ub) {
+        var cx = ub.x + ub.w / 2, cy = ub.y + ub.h / 2;
+        c.translate(cx, cy); c.rotate(rot); c.translate(-cx, -cy);
+        c.strokeRect(ub.x - pad, ub.y - pad, ub.w + pad * 2, ub.h + pad * 2);
+      }
+    } else {
+      c.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    }
+    c.restore();
   }
   c.setLineDash([]);
   c.restore();
@@ -341,7 +380,16 @@ function drawGroupHandles(c) {
     var obj = objects[i];
     if (s.selectedIds.indexOf(obj.id) < 0) continue;
     var b = getBounds(obj);
-    if (b) c.strokeRect(b.x, b.y, b.w, b.h);
+    if (b) {
+      c.save();
+      var rot = obj.rotation || 0;
+      if (rot) {
+        var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+        c.translate(cx, cy); c.rotate(rot); c.translate(-cx, -cy);
+      }
+      c.strokeRect(b.x, b.y, b.w, b.h);
+      c.restore();
+    }
   }
   c.setLineDash([]);
   // Draw unified group bounding box with solid line and corner handles
@@ -352,11 +400,16 @@ function drawGroupHandles(c) {
   c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
   [{ x: gb.x, y: gb.y }, { x: gb.x + gb.w, y: gb.y }, { x: gb.x, y: gb.y + gb.h }, { x: gb.x + gb.w, y: gb.y + gb.h }].forEach(function(p) {
-    c.fillStyle = '#10b981';
-    c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
-    c.strokeStyle = '#141417';
-    c.lineWidth = 1.5 * iz;
-    c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.fillStyle = '#10b981'; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
+  // Rotation gizmo: line from top-center to rotation handle circle
+  var tcx = gb.x + gb.w / 2, tcy = gb.y;
+  var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;
+  c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
+  c.beginPath(); c.moveTo(tcx, tcy); c.lineTo(rhx, rhy); c.stroke();
+  c.beginPath(); c.arc(rhx, rhy, ROTATE_HANDLE_RADIUS * iz, 0, Math.PI * 2);
+  c.fillStyle = '#10b981'; c.fill();
+  c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.stroke();
   c.restore();
 }
