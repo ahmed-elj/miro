@@ -15,6 +15,7 @@ import {
   startTextCreate, startStickyCreate, startEditExisting,
   finishEditing, updateEditorFS, updateEditorPosition,
   cycleSelect,
+  startBoxSelect, updateBoxSelect, finishBoxSelect,
   zoomAt, updateZoomDisplay, resetZoom, fitView, locateObjects,
   clearAll, insertImg, exportPNG,
 } from './tools.js';
@@ -37,6 +38,7 @@ export function setToolActive(t) {
     b.classList.toggle('active', b.dataset.tool === t);
   });
   s.selectedId = null;
+  s.selectedIds = [];
   updateCursor();
   requestRender();
 }
@@ -90,6 +92,40 @@ function updatePopup() {
   return;
   }
   if (isStickyEdit) { pop.classList.remove('visible'); return; }
+  if (s.selectedIds.length > 1) {
+    // Multiselect popup — show limited controls
+    var allBounds = [];
+    s.selectedIds.forEach(function(id) {
+      var o = findObj(id);
+      if (o) { var bb = getBounds(o); if (bb) allBounds.push(bb); }
+    });
+    if (allBounds.length) {
+      var abx = Infinity, aby = Infinity, abr = -Infinity, abb = -Infinity;
+      allBounds.forEach(function(bb) {
+        abx = Math.min(abx, bb.x); aby = Math.min(aby, bb.y);
+        abr = Math.max(abr, bb.x + bb.w); abb = Math.max(abb, bb.y + bb.h);
+      });
+      var sp = w2s(abx, aby), sh2 = (abb - aby) * cam.zoom, ph3 = 80;
+      var top3 = sp.y - ph3 - 8;
+      if (top3 < 10) top3 = sp.y + sh2 + 10;
+      var left3 = sp.x;
+      if (left3 + 380 > window.innerWidth) left3 = window.innerWidth - 390;
+      if (left3 < 10) left3 = 10;
+      pop.style.left = left3 + 'px'; pop.style.top = top3 + 'px';
+    }
+    pop.classList.add('visible');
+    document.getElementById('popTextRow').style.display = 'none';
+    document.getElementById('popColorRow').style.display = 'flex';
+    document.getElementById('popStickyRow').style.display = 'none';
+    document.getElementById('popEditText').style.display = 'none';
+    document.getElementById('popStrokeBtn').style.display = 'none';
+    // Show opacity of primary selected object
+    var primaryObj = findObj(s.selectedId);
+    document.getElementById('popOpacity').value = primaryObj && primaryObj.opacity != null ? primaryObj.opacity : 1;
+    document.getElementById('popOpacityVal').textContent = Math.round((primaryObj && primaryObj.opacity != null ? primaryObj.opacity : 1) * 100) + '%';
+    s._lastPopupId = null;
+    return;
+  }
   if (s.selectedId === null || s.isEditing) { pop.classList.remove('visible'); s._lastPopupId = null; return; }
   var selObj = findObj(s.selectedId);
   if (!selObj) { pop.classList.remove('visible'); s._lastPopupId = null; return; }
@@ -154,6 +190,17 @@ function applyPopColor(c) {
   var s = state;
   var isTextEdit = s.isEditing && (s.editId === 'new-text' || (typeof s.editId === 'number' && findObj(s.editId) && findObj(s.editId).type === 'text'));
   if (isTextEdit) { document.getElementById('textEditor').focus(); document.execCommand('foreColor', false, c); return; }
+  if (s.selectedIds.length > 1) {
+    saveState();
+    s.selectedIds.forEach(function(id) {
+      var obj = findObj(id);
+      if (!obj) return;
+      if (obj.type === 'text' && obj.spans) { obj.spans.forEach(function(sp) { sp.color = c; }); obj.color = c; }
+      else if (obj.type !== 'sticky' && obj.type !== 'image') obj.color = c;
+    });
+    requestRender();
+    return;
+  }
   var obj = findObj(s.selectedId);
   if (!obj) return;
   saveState();
@@ -271,7 +318,19 @@ function setupPopupHandlers() {
       if (o) { o.opacity = val; requestRender(); }
       return;
     }
-    var o = findObj(s.selectedId); if (!o) return; o.opacity = val; requestRender();
+    // Apply to all selected objects in multiselect
+    if (s.selectedIds.length > 1) {
+      s.selectedIds.forEach(function(id) {
+        var o = findObj(id);
+        if (o) o.opacity = val;
+      });
+      requestRender();
+      return;
+    }
+    var o = findObj(s.selectedId);
+    if (!o) return;
+    o.opacity = val;
+    requestRender();
   });
   document.getElementById('popOpacity').addEventListener('change', function() { saveState(); });
   document.getElementById('popStrokeWeight').addEventListener('input', function(e) {
@@ -303,11 +362,33 @@ function setupPopupHandlers() {
   });
   document.getElementById('popStrokeWeight').addEventListener('change', function() { saveState(); });
   document.getElementById('popLayerUp').addEventListener('click', function() {
+    if (s.selectedIds.length > 1) {
+      // Move all selected objects up as a group
+      saveState();
+      // Process from top to bottom to maintain relative order
+      for (var i = objects.length - 2; i >= 0; i--) {
+        if (s.selectedIds.indexOf(objects[i].id) >= 0 && s.selectedIds.indexOf(objects[i + 1].id) < 0) {
+          var tmp = objects[i]; objects[i] = objects[i + 1]; objects[i + 1] = tmp;
+        }
+      }
+      requestRender();
+      return;
+    }
     var i = objects.findIndex(function(x) { return x.id === s.selectedId; });
     if (i < 0 || i >= objects.length - 1) return;
     saveState(); var tmp = objects[i]; objects[i] = objects[i+1]; objects[i+1] = tmp; requestRender();
   });
   document.getElementById('popLayerDn').addEventListener('click', function() {
+    if (s.selectedIds.length > 1) {
+      saveState();
+      for (var i = 1; i < objects.length; i++) {
+        if (s.selectedIds.indexOf(objects[i].id) >= 0 && s.selectedIds.indexOf(objects[i - 1].id) < 0) {
+          var tmp = objects[i]; objects[i] = objects[i - 1]; objects[i - 1] = tmp;
+        }
+      }
+      requestRender();
+      return;
+    }
     var i = objects.findIndex(function(x) { return x.id === s.selectedId; });
     if (i <= 0) return;
     saveState(); var tmp = objects[i]; objects[i] = objects[i-1]; objects[i-1] = tmp; requestRender();
@@ -432,13 +513,13 @@ function onPointerDown(e) {
   // Close any open popup dropdowns
   document.querySelectorAll('.pop-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   if (s.isEditing) { finishEditing(); return; }
-  s.dragMode = null; s.dragUndo = false;
+  s.dragMode = null; s.dragUndo = false; s.multiDragSnaps = null;
   var r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
   var wp = s2w(sx, sy);
   if (e.button === 1) { e.preventDefault(); startPan(sx, sy); return; }
   if (e.button !== 0) return;
   switch (s.curTool) {
-    case 'select': onSelectDown(wp, sx, sy); break;
+    case 'select': onSelectDown(wp, sx, sy, e.shiftKey); break;
     case 'hand': startPan(sx, sy); break;
     case 'pen': startPen(wp); break;
     case 'eraser': startErase(); break;
@@ -461,7 +542,12 @@ function onPointerMove(e) {
   if (s.isPan) {
     cam.x = s.panCamSt.x + (sx - s.panSt.x);
     cam.y = s.panCamSt.y + (sy - s.panSt.y);
-    requestRender(); return;
+    requestRender();
+    return;
+  }
+  if (s.isBoxSelect) {
+    updateBoxSelect(wp);
+    return;
   }
   if (s.isDrawing) {
     if (s.curTool === 'pen') { s.curPath.push(wp); requestRender(); }
@@ -477,6 +563,7 @@ function onPointerMove(e) {
 function onPointerUp(e) {
   var s = state;
   if (s.isPan) { s.isPan = false; updateCursor(); return; }
+  if (s.isBoxSelect) { finishBoxSelect(e.shiftKey); return; }
   if (s.isDrawing) {
     if (s.curTool === 'pen') finishPen();
     else if (s.curTool === 'eraser') finishErase();
@@ -487,6 +574,7 @@ function onPointerUp(e) {
     if (!s.dragUndo && s.cycleHits) cycleSelect();
     s.dragMode = null; s.dragSW = null; s.dragSnap = null; s.dragUndo = false;
     s.cycleHits = null; s.cycleIdx = -1;
+    s.multiDragSnaps = null;
   }
 }
 
@@ -494,6 +582,16 @@ function onWheel(e) {
   e.preventDefault();
   var r = canvas.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.08 : 1 / 1.08);
+}
+
+// ── Select all objects ──
+function selectAll() {
+  var s = state;
+  if (!objects.length) return;
+  s.selectedIds = objects.map(function(o) { return o.id; });
+  s.selectedId = s.selectedIds[s.selectedIds.length - 1];
+  s._lastPopupId = null;
+  requestRender();
 }
 
 // ── Keyboard ──
@@ -505,13 +603,15 @@ function setupKeyboard() {
       e.preventDefault(); s.spaceHeld = true; s.toolBefore = s.curTool; setToolActive('hand'); return;
     }
     if (!e.ctrlKey && !e.metaKey && !e.altKey && KEY_MAP[e.code]) { setToolActive(KEY_MAP[e.code]); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && s.selectedId !== null) { e.preventDefault(); delSel(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (s.selectedId !== null || s.selectedIds.length > 0)) { e.preventDefault(); delSel(); return; }
+  if (e.key === 'Escape' && s.selectedIds.length > 0) { s.selectedId = null; s.selectedIds = []; requestRender(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
     if ((e.ctrlKey || e.metaKey) && e.key === '=') { e.preventDefault(); zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); resetZoom(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') { e.preventDefault(); selectAll(); return; }
   if (e.shiftKey && e.code === 'KeyF') { e.preventDefault(); locateObjects(); }
   });
   window.addEventListener('keyup', function(e) {

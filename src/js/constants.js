@@ -19,6 +19,10 @@ export const MAX_ZOOM = 100000;
 export const HANDLE_SIZE = 8;
 /** Hit size (screen px) for handle hit-test */
 export const HANDLE_HIT = 22;
+/** Distance (screen px) of rotation handle above bounding box top-center */
+export const ROTATE_HANDLE_DIST = 28;
+/** Radius (screen px) of rotation handle circle */
+export const ROTATE_HANDLE_RADIUS = 7;
 
 export const MAX_UNDO = 80;
 

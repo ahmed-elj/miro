@@ -8,7 +8,7 @@ import {
 import { HANDLE_SIZE } from './constants.js';
 import { s2w, roundedRect, wrapLine } from './utils.js';
 import { getSpans } from './editor.js';
-import { getBounds } from './objects.js';
+import { getBounds, getGroupBounds } from './objects.js';
 
 let rafPending = false;
 export function requestRender() {
@@ -36,7 +36,9 @@ function render() {
     drawObject(ctx, objects[i]);
   }
   if (s.isDrawing) drawPreview(ctx);
-  if (s.selectedId !== null && !s.isEditing) drawHandles(ctx);
+  if (s.isBoxSelect) drawMarquee(ctx);
+  if (s.selectedIds.length > 1 && !s.isEditing) drawGroupHandles(ctx);
+  else if (s.selectedId !== null && !s.isEditing) drawHandles(ctx);
   if (s.locateEnd > 0) drawLocateHighlights(ctx);
   ctx.restore();
   if (!objects.length && !s.isDrawing) {
@@ -303,5 +305,58 @@ function drawLocateHighlights(c) {
     c.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
   }
   c.setLineDash([]);
+  c.restore();
+}
+
+function drawMarquee(c) {
+  var s = state;
+  if (!s.boxSelStart || !s.boxSelEnd) return;
+  var x1 = s.boxSelStart.x, y1 = s.boxSelStart.y;
+  var x2 = s.boxSelEnd.x, y2 = s.boxSelEnd.y;
+  var x = Math.min(x1, x2), y = Math.min(y1, y2);
+  var w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+  c.save();
+  var iz = 1 / cam.zoom;
+  c.fillStyle = 'rgba(16, 185, 129, 0.08)';
+  c.fillRect(x, y, w, h);
+  c.strokeStyle = '#10b981';
+  c.lineWidth = 1.5 * iz;
+  c.setLineDash([6 * iz, 4 * iz]);
+  c.strokeRect(x, y, w, h);
+  c.setLineDash([]);
+  c.restore();
+}
+
+function drawGroupHandles(c) {
+  var s = state;
+  var gb = getGroupBounds(s.selectedIds);
+  if (!gb) return;
+  c.save();
+  var iz = 1 / cam.zoom;
+  // Draw individual dashed outlines for each selected object
+  c.strokeStyle = '#10b981';
+  c.lineWidth = 1.5 * iz;
+  c.setLineDash([6 * iz, 4 * iz]);
+  for (var i = 0; i < objects.length; i++) {
+    var obj = objects[i];
+    if (s.selectedIds.indexOf(obj.id) < 0) continue;
+    var b = getBounds(obj);
+    if (b) c.strokeRect(b.x, b.y, b.w, b.h);
+  }
+  c.setLineDash([]);
+  // Draw unified group bounding box with solid line and corner handles
+  c.strokeStyle = '#10b981';
+  c.lineWidth = 1.5 * iz;
+  c.setLineDash([6 * iz, 4 * iz]);
+  c.strokeRect(gb.x, gb.y, gb.w, gb.h);
+  c.setLineDash([]);
+  var hs = HANDLE_SIZE * iz;
+  [{ x: gb.x, y: gb.y }, { x: gb.x + gb.w, y: gb.y }, { x: gb.x, y: gb.y + gb.h }, { x: gb.x + gb.w, y: gb.y + gb.h }].forEach(function(p) {
+    c.fillStyle = '#10b981';
+    c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.strokeStyle = '#141417';
+    c.lineWidth = 1.5 * iz;
+    c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+  });
   c.restore();
 }

@@ -3,18 +3,67 @@
  */
 
 import { cam, objects, imgCache, state, gid } from './state.js';
-import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP } from './constants.js';
+import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT } from './constants.js';
 import { s2w, w2s, showToast } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
-import { getBounds, hitTest, hitHandle } from './objects.js';
+import { getBounds, hitTest, hitHandle, getGroupBounds } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, delSel, findObj } from './undo.js';
 
 // ── Select tool: pointer down ──
-export function onSelectDown(wp, sx, sy) {
+export function onSelectDown(wp, sx, sy, shiftKey) {
   var s = state;
-  // Check resize handles on currently selected object first
-  if (s.selectedId !== null) {
+
+  // If shift-held and clicking on an object, toggle it in the selection
+  if (shiftKey) {
+    var hits = [];
+    for (var i = objects.length - 1; i >= 0; i--) {
+      if (hitTest(objects[i], wp.x, wp.y)) hits.push(objects[i]);
+    }
+    if (hits.length) {
+      var clicked = hits[0];
+      var idx = s.selectedIds.indexOf(clicked.id);
+      if (idx >= 0) {
+        // Deselect this object
+        s.selectedIds.splice(idx, 1);
+        if (s.selectedIds.length === 0) {
+          s.selectedId = null;
+        } else {
+          s.selectedId = s.selectedIds[s.selectedIds.length - 1];
+        }
+      } else {
+        // Add to selection
+        s.selectedIds.push(clicked.id);
+        s.selectedId = clicked.id;
+      }
+      s._lastPopupId = null;
+      requestRender();
+      return;
+    }
+    // Shift+click on empty space — start box select
+    startBoxSelect(wp);
+    return;
+  }
+
+  // Check resize handles on the group bounding box (multiselect) or single object
+  if (s.selectedIds.length > 1) {
+    var gb = getGroupBounds(s.selectedIds);
+    if (gb) {
+      var gh = hitHandleBounds(gb, wp.x, wp.y);
+      if (gh) {
+        s.dragMode = gh;
+        s.dragSW = wp;
+        s.dragUndo = false;
+        // Snapshot all selected objects for group resize
+        s.multiDragSnaps = {};
+        s.selectedIds.forEach(function(id) {
+          var o = findObj(id);
+          if (o) s.multiDragSnaps[id] = JSON.parse(JSON.stringify(o));
+        });
+        return;
+      }
+    }
+  } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
     if (obj) {
       var h = hitHandle(obj, wp.x, wp.y);
@@ -27,45 +76,136 @@ export function onSelectDown(wp, sx, sy) {
       }
     }
   }
+
   // Collect all objects under the click point (top-to-bottom order)
-  var hits = [];
-  for (var i = objects.length - 1; i >= 0; i--) {
-    if (hitTest(objects[i], wp.x, wp.y)) hits.push(objects[i]);
+  var hits2 = [];
+  for (var i2 = objects.length - 1; i2 >= 0; i2--) {
+    if (hitTest(objects[i2], wp.x, wp.y)) hits2.push(objects[i2]);
   }
-  if (hits.length) {
-    // If the already-selected object is under the cursor, allow dragging it.
-    // Cycle to the next object only on click-up (no drag movement).
+  if (hits2.length) {
+    // Check if any of the clicked objects are already in the multiselection
+    var clickedSelectedId = -1;
+    for (var ci = 0; ci < hits2.length; ci++) {
+      if (s.selectedIds.indexOf(hits2[ci].id) >= 0) {
+        clickedSelectedId = hits2[ci].id;
+        break;
+      }
+    }
+
+    // If we clicked on an already-selected object in a multiselection, drag all
+    if (clickedSelectedId >= 0 && s.selectedIds.length > 1) {
+      s.dragMode = 'move-multi';
+      s.dragSW = wp;
+      s.dragUndo = false;
+      // Snapshot all selected objects
+      s.multiDragSnaps = {};
+      s.selectedIds.forEach(function(id) {
+        var o = findObj(id);
+        if (o) s.multiDragSnaps[id] = JSON.parse(JSON.stringify(o));
+      });
+      return;
+    }
+
+    // Single selection or clicking on the sole selected object
     var selObj = s.selectedId !== null ? findObj(s.selectedId) : null;
     var selInHits = -1;
     if (selObj) {
-      for (var j = 0; j < hits.length; j++) {
-        if (hits[j].id === selObj.id) { selInHits = j; break; }
+      for (var j = 0; j < hits2.length; j++) {
+        if (hits2[j].id === selObj.id) { selInHits = j; break; }
       }
     }
+
     if (selInHits >= 0) {
       // Set up drag on current selection; defer cycle to pointer up
       s.dragMode = 'move';
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(selObj));
       s.dragUndo = false;
-      s.cycleHits = hits;
+      s.cycleHits = hits2;
       s.cycleIdx = selInHits;
+    } else {
+      // New area — select topmost object (clear multiselect)
+      s.selectedId = hits2[0].id;
+      s.selectedIds = [hits2[0].id];
+      s.dragMode = 'move';
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(hits2[0]));
+      s.dragUndo = false;
+      s.cycleHits = null;
+      s.cycleIdx = -1;
+      s._lastPopupId = null;
+    }
+    requestRender();
   } else {
-    // New area — select topmost object
-    s.selectedId = hits[0].id;
-    s.dragMode = 'move';
-    s.dragSW = wp;
-    s.dragSnap = JSON.parse(JSON.stringify(hits[0]));
-    s.dragUndo = false;
-    s.cycleHits = null;
-    s.cycleIdx = -1;
-    s._lastPopupId = null;
+    // Click on empty space — start box select (always, even if nothing selected)
+    startBoxSelect(wp);
   }
-    requestRender();
-  } else if (s.selectedId !== null) {
+}
+
+// ── Box (marquee) select ──
+export function startBoxSelect(wp) {
+  var s = state;
+  s.isBoxSelect = true;
+  s.boxSelStart = { x: wp.x, y: wp.y };
+  s.boxSelEnd = { x: wp.x, y: wp.y };
+}
+
+export function updateBoxSelect(wp) {
+  var s = state;
+  if (!s.isBoxSelect) return;
+  s.boxSelEnd = { x: wp.x, y: wp.y };
+  requestRender();
+}
+
+export function finishBoxSelect(shiftKey) {
+  var s = state;
+  if (!s.isBoxSelect) return;
+  s.isBoxSelect = false;
+  if (!s.boxSelStart || !s.boxSelEnd) { s.boxSelStart = null; s.boxSelEnd = null; return; }
+
+  var x1 = s.boxSelStart.x, y1 = s.boxSelStart.y;
+  var x2 = s.boxSelEnd.x, y2 = s.boxSelEnd.y;
+  var bx = Math.min(x1, x2), by = Math.min(y1, y2);
+  var bw = Math.abs(x2 - x1), bh = Math.abs(y2 - y1);
+
+  s.boxSelStart = null;
+  s.boxSelEnd = null;
+
+  // If box is too small (just a click), deselect all
+  if (bw < 3 / cam.zoom && bh < 3 / cam.zoom) {
     s.selectedId = null;
+    s.selectedIds = [];
     requestRender();
+    return;
   }
+
+  // Find objects whose bounds intersect the marquee rect
+  var newIds = [];
+  objects.forEach(function(obj) {
+    var b = getBounds(obj);
+    if (!b) return;
+    // Check if bounds overlap the marquee rectangle
+    if (b.x < bx + bw && b.x + b.w > bx && b.y < by + bh && b.y + b.h > by) {
+      newIds.push(obj.id);
+    }
+  });
+
+  if (shiftKey) {
+    // Shift+box: add to existing selection
+    newIds.forEach(function(id) {
+      if (s.selectedIds.indexOf(id) < 0) s.selectedIds.push(id);
+    });
+  } else {
+    s.selectedIds = newIds;
+  }
+
+  if (s.selectedIds.length > 0) {
+    s.selectedId = s.selectedIds[s.selectedIds.length - 1];
+  } else {
+    s.selectedId = null;
+  }
+  s._lastPopupId = null;
+  requestRender();
 }
 
 // ── Cycle selection on click (no drag) ──
@@ -76,32 +216,164 @@ export function cycleSelect() {
   var nextIdx = s.cycleIdx + 1 < hits.length ? s.cycleIdx + 1 : 0;
   var nextHit = hits[nextIdx];
   s.selectedId = nextHit.id;
+  s.selectedIds = [nextHit.id];
   s.cycleIdx = nextIdx;
   s._lastPopupId = null;
   requestRender();
 }
 
+// ── Move an object by dx,dy relative to its snapshot ──
+function moveObjectBy(obj, snap, dx, dy) {
+  switch (obj.type) {
+  case 'path':
+    obj.points = snap.points.map(function(p) { return { x: p.x + dx, y: p.y + dy }; });
+    break;
+  case 'line':
+  case 'arrow':
+    obj.x1 = snap.x1 + dx; obj.y1 = snap.y1 + dy;
+    obj.x2 = snap.x2 + dx; obj.y2 = snap.y2 + dy;
+    break;
+  default:
+    obj.x = snap.x + dx; obj.y = snap.y + dy;
+    break;
+  }
+}
+
+// ── Compute the unified bounding box of a set of object IDs (in objects.js) ──
+
+// ── Compute group bounds from snapshot map (for resize, uses live getBounds on snaps) ──
+function getGroupBoundsFromSnaps(snapsMap, ids) {
+  var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
+  var found = false;
+  ids.forEach(function(id) {
+    var snap = snapsMap[id];
+    if (!snap) return;
+    var b = getBounds(snap);
+    if (!b) return;
+    found = true;
+    ax = Math.min(ax, b.x); ay = Math.min(ay, b.y);
+    bx = Math.max(bx, b.x + b.w); by = Math.max(by, b.y + b.h);
+  });
+  if (!found) return null;
+  return { x: ax, y: ay, w: bx - ax, h: by - ay };
+}
+
+// ── Hit-test handles on an arbitrary bounding box (for group resize) ──
+export function hitHandleBounds(b, wx, wy) {
+  if (!b) return null;
+  var hs = HANDLE_HIT / cam.zoom;
+  var cs = [
+    { k: 'resize-tl', x: b.x, y: b.y },
+    { k: 'resize-tr', x: b.x + b.w, y: b.y },
+    { k: 'resize-bl', x: b.x, y: b.y + b.h },
+    { k: 'resize-br', x: b.x + b.w, y: b.y + b.h },
+  ];
+  for (var i = 0; i < cs.length; i++) {
+    if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) return cs[i].k;
+  }
+  return null;
+}
+
+// ── Resize a single object relative to a group anchor + scale factors ──
+function scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy) {
+  switch (obj.type) {
+  case 'path':
+    obj.points = snap.points.map(function(p) {
+      return { x: anchorX + (p.x - anchorX) * sx, y: anchorY + (p.y - anchorY) * sy };
+    });
+    break;
+  case 'line':
+  case 'arrow':
+    obj.x1 = anchorX + (snap.x1 - anchorX) * sx;
+    obj.y1 = anchorY + (snap.y1 - anchorY) * sy;
+    obj.x2 = anchorX + (snap.x2 - anchorX) * sx;
+    obj.y2 = anchorY + (snap.y2 - anchorY) * sy;
+    break;
+  case 'text':
+    // For text, x/y is the center point — scale it, and scale fontSize
+    obj.x = anchorX + (snap.x - anchorX) * sx;
+    obj.y = anchorY + (snap.y - anchorY) * sy;
+    obj.fontSize = snap.fontSize * Math.max(0.05, (Math.abs(sx) + Math.abs(sy)) / 2);
+    break;
+  case 'sticky':
+    // Sticky: x/y is top-left; scale position, size, and font proportionally
+    obj.x = anchorX + (snap.x - anchorX) * sx;
+    obj.y = anchorY + (snap.y - anchorY) * sy;
+    obj.w = Math.max(10 / cam.zoom, snap.w * Math.abs(sx));
+    obj.h = Math.max(10 / cam.zoom, snap.h * Math.abs(sy));
+    obj.fontSize = snap.fontSize * Math.max(0.05, (Math.abs(sx) + Math.abs(sy)) / 2);
+    break;
+  default:
+    // rect, ellipse, image: x/y is top-left
+    obj.x = anchorX + (snap.x - anchorX) * sx;
+    obj.y = anchorY + (snap.y - anchorY) * sy;
+    obj.w = Math.max(10 / cam.zoom, snap.w * Math.abs(sx));
+    obj.h = Math.max(10 / cam.zoom, snap.h * Math.abs(sy));
+    break;
+  }
+}
+
 // ── Drag handling ──
 export function handleDrag(wp) {
   var s = state;
+  var dx = wp.x - s.dragSW.x, dy = wp.y - s.dragSW.y;
+
+  // Multi-object move
+  if (s.dragMode === 'move-multi' && s.multiDragSnaps) {
+    s.selectedIds.forEach(function(id) {
+      var obj = findObj(id);
+      var snap = s.multiDragSnaps[id];
+      if (!obj || !snap) return;
+      moveObjectBy(obj, snap, dx, dy);
+    });
+    requestRender();
+    return;
+  }
+
+  // Multi-object group resize
+  if (s.dragMode && s.dragMode.startsWith('resize-') && s.multiDragSnaps && s.selectedIds.length > 1) {
+    var gb = getGroupBounds(s.selectedIds);
+    if (!gb || gb.w < 0.01 || gb.h < 0.01) return;
+    // Use the snap state to get the original group bounds
+    var snapIds = Object.keys(s.multiDragSnaps).map(Number);
+    var snapGb = getGroupBoundsFromSnaps(s.multiDragSnaps, snapIds);
+    if (!snapGb || snapGb.w < 0.01 || snapGb.h < 0.01) return;
+
+    var anchorX, anchorY, newW, newH;
+    var dm = s.dragMode;
+    if (dm === 'resize-br') {
+      anchorX = snapGb.x; anchorY = snapGb.y;
+      newW = snapGb.w + dx; newH = snapGb.h + dy;
+    } else if (dm === 'resize-bl') {
+      anchorX = snapGb.x + snapGb.w; anchorY = snapGb.y;
+      newW = snapGb.w - dx; newH = snapGb.h + dy;
+    } else if (dm === 'resize-tr') {
+      anchorX = snapGb.x; anchorY = snapGb.y + snapGb.h;
+      newW = snapGb.w + dx; newH = snapGb.h - dy;
+    } else { // resize-tl
+      anchorX = snapGb.x + snapGb.w; anchorY = snapGb.y + snapGb.h;
+      newW = snapGb.w - dx; newH = snapGb.h - dy;
+    }
+    var sx = newW / snapGb.w;
+    var sy = newH / snapGb.h;
+    sx = Math.max(0.05, sx); sy = Math.max(0.05, sy);
+
+    s.selectedIds.forEach(function(id) {
+      var obj = findObj(id);
+      var snap = s.multiDragSnaps[id];
+      if (!obj || !snap) return;
+      scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy);
+    });
+    requestRender();
+    return;
+  }
+
   var obj = findObj(s.selectedId);
   if (!obj || !s.dragSnap) return;
-  var dx = wp.x - s.dragSW.x, dy = wp.y - s.dragSW.y, snap = s.dragSnap;
+  var snap = s.dragSnap;
 
   if (s.dragMode === 'move') {
-    switch (obj.type) {
-      case 'path':
-        obj.points = snap.points.map(function(p) { return { x: p.x + dx, y: p.y + dy }; });
-        break;
-      case 'line':
-      case 'arrow':
-        obj.x1 = snap.x1 + dx; obj.y1 = snap.y1 + dy;
-        obj.x2 = snap.x2 + dx; obj.y2 = snap.y2 + dy;
-        break;
-      default:
-        obj.x = snap.x + dx; obj.y = snap.y + dy;
-        break;
-    }
+    moveObjectBy(obj, snap, dx, dy);
   } else if (s.dragMode.startsWith('resize-')) {
     var ms = 10 / cam.zoom;
     if (obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'image') {
@@ -199,10 +471,10 @@ export function finishPen() {
   var s = state;
   s.isDrawing = false;
   if (s.curPath.length >= 2) {
-    addObj({
-      type: 'path', id: gid(), points: s.curPath.map(function(p) { return { x: p.x, y: p.y }; }),
-      color: s.curColor, strokeWidth: s.curStroke / cam.zoom, opacity: 1,
-    });
+      addObj({
+        type: 'path', id: gid(), points: s.curPath.map(function(p) { return { x: p.x, y: p.y }; }),
+        color: s.curColor, strokeWidth: s.curStroke / cam.zoom, opacity: 1, rotation: 0,
+      });
   }
   s.curPath = [];
   s.drawSt = null;
@@ -216,8 +488,11 @@ export function eraseAt(wp) {
   for (var i = objects.length - 1; i >= 0; i--) {
     if (hitTest(objects[i], wp.x, wp.y)) {
       saveState();
+      var erasedId = objects[i].id;
       objects.splice(i, 1);
-      if (state.selectedId !== null && !findObj(state.selectedId)) state.selectedId = null;
+      if (state.selectedId === erasedId) state.selectedId = null;
+      var idx = state.selectedIds.indexOf(erasedId);
+      if (idx >= 0) state.selectedIds.splice(idx, 1);
       requestRender();
       return;
     }
@@ -290,6 +565,7 @@ export function startStickyCreate(wp) {
 export function startEditExisting(obj) {
   var s = state;
   s.selectedId = obj.id;
+  s.selectedIds = [obj.id];
   var b = getBounds(obj), sp = w2s(b.x, b.y);
   if (obj.type === 'text') {
     var ed = document.getElementById('textEditor');
@@ -449,7 +725,7 @@ function animateLocate() {
 
 export function clearAll() {
   if (!objects.length) return;
-  saveState(); objects.length = 0; state.selectedId = null;
+  saveState(); objects.length = 0; state.selectedId = null; state.selectedIds = [];
   requestRender(); showToast('Canvas cleared');
 }
 

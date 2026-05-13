@@ -1,8 +1,8 @@
-/**
- * Object bounds calculation and hit-testing.
- */
+/** 
+* Object bounds calculation and hit-testing.
+*/
 
-import { cam } from './state.js';
+import { cam, objects } from './state.js';
 import { HANDLE_HIT } from './constants.js';
 import { ptSegDist } from './utils.js';
 import { getSpans } from './editor.js';
@@ -144,4 +144,25 @@ export function hitHandle(obj, wx, wy) {
     if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) return cs[i].k;
   }
   return null;
+}
+
+// ── Compute the unified bounding box of a set of object IDs ──
+export function getGroupBounds(ids) {
+  var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
+  var found = false;
+  ids.forEach(function(id) {
+    for (var i = 0; i < objects.length; i++) {
+      if (objects[i].id === id) {
+        var b = getBounds(objects[i]);
+        if (b) {
+          found = true;
+          ax = Math.min(ax, b.x); ay = Math.min(ay, b.y);
+          bx = Math.max(bx, b.x + b.w); by = Math.max(by, b.y + b.h);
+        }
+        break;
+      }
+    }
+  });
+  if (!found) return null;
+  return { x: ax, y: ay, w: bx - ax, h: by - ay };
 }

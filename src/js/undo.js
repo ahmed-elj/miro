@@ -19,6 +19,7 @@ export function undo() {
   objects.length = 0;
   restored.forEach(function(o) { objects.push(o); });
   state.selectedId = null;
+  state.selectedIds = [];
   refreshImgCache();
   requestRender();
 }
@@ -30,6 +31,7 @@ export function redo() {
   objects.length = 0;
   restored.forEach(function(o) { objects.push(o); });
   state.selectedId = null;
+  state.selectedIds = [];
   refreshImgCache();
   requestRender();
 }
@@ -41,12 +43,15 @@ export function addObj(o) {
 }
 
 export function delSel() {
-  if (state.selectedId === null) return;
+  var s = state;
+  if (s.selectedId === null && s.selectedIds.length === 0) return;
   saveState();
-  var filtered = objects.filter(function(x) { return x.id !== state.selectedId; });
+  var idsToRemove = s.selectedIds.length > 0 ? s.selectedIds.slice() : [s.selectedId];
+  var filtered = objects.filter(function(x) { return idsToRemove.indexOf(x.id) < 0; });
   objects.length = 0;
   filtered.forEach(function(o) { objects.push(o); });
-  state.selectedId = null;
+  s.selectedId = null;
+  s.selectedIds = [];
   requestRender();
 }
 

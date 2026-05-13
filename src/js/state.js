@@ -23,6 +23,13 @@ export const imgCache = {};
 // ── Mutable scalar state ──
 export const state = {
   selectedId: null,
+  selectedIds: [],       // multiselect: array of all selected object IDs
+  isBoxSelect: false,    // currently drawing a marquee selection box
+  boxSelStart: null,     // world-space start point of marquee
+  boxSelEnd: null,       // world-space end point of marquee
+  multiDragSnaps: null, // map of id → deep-clone snapshot for multi-object drag
+  dragRotStart: null, // angle at start of rotation drag (radians)
+  dragRotSnaps: null, // map of id → { rotation, cx, cy } snapshot for rotation
   curTool: 'select',
   curColor: '#e4e4e8',
   curStroke: 2,
