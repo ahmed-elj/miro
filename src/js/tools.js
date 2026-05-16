@@ -13,7 +13,52 @@ import { saveState, addObj, delSel, findObj } from './undo.js';
 function getLinkedSelectionIds(id) {
   var obj = findObj(id);
   if (!obj || !obj.groupId) return [id];
+  if (state.groupEditId === obj.groupId) return [id];
   return objects.filter(function(o) { return o.groupId === obj.groupId; }).map(function(o) { return o.id; });
+}
+
+function isSelectedLinkedGroup(groupId) {
+  if (!groupId || state.selectedIds.length < 2) return false;
+  var found = false;
+  for (var i = 0; i < objects.length; i++) {
+    if (objects[i].groupId !== groupId) continue;
+    found = true;
+    if (state.selectedIds.indexOf(objects[i].id) < 0) return false;
+  }
+  if (!found) return false;
+  for (var j = 0; j < state.selectedIds.length; j++) {
+    var obj = findObj(state.selectedIds[j]);
+    if (!obj || obj.groupId !== groupId) return false;
+  }
+  return true;
+}
+
+export function enterGroupEditForObject(id) {
+  var obj = findObj(id);
+  if (!obj || !obj.groupId) return false;
+  state.groupEditId = obj.groupId;
+  state.groupEditCandidateId = null;
+  state.selectedId = obj.id;
+  state.selectedIds = [obj.id];
+  state.groupRotation = 0;
+  state._lastPopupId = null;
+  showToast('Editing group');
+  requestRender();
+  return true;
+}
+
+export function exitGroupEdit(selectGroup) {
+  var groupId = state.groupEditId;
+  if (!groupId) return false;
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  if (selectGroup) {
+    state.selectedIds = objects.filter(function(o) { return o.groupId === groupId; }).map(function(o) { return o.id; });
+    state.selectedId = state.selectedIds.length ? state.selectedIds[state.selectedIds.length - 1] : null;
+  }
+  state._lastPopupId = null;
+  requestRender();
+  return true;
 }
 
 function snapshotMultiDrag(ids) {
@@ -190,6 +235,10 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     if (hitTest(objects[i2], wp.x, wp.y)) hits2.push(objects[i2]);
   }
   if (hits2.length) {
+    if (s.groupEditId && hits2[0].groupId !== s.groupEditId) {
+      s.groupEditId = null;
+      s.groupEditCandidateId = null;
+    }
     // Check if any of the clicked objects are already in the multiselection
     var clickedSelectedId = -1;
     for (var ci = 0; ci < hits2.length; ci++) {
@@ -201,6 +250,10 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
 
     // If we clicked on an already-selected object in a multiselection, drag all
     if (clickedSelectedId >= 0 && s.selectedIds.length > 1) {
+      var clickedSelectedObj = findObj(clickedSelectedId);
+      if (!s.groupEditId && clickedSelectedObj && isSelectedLinkedGroup(clickedSelectedObj.groupId)) {
+        s.groupEditCandidateId = clickedSelectedId;
+      }
       s.dragMode = 'move-multi';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -240,6 +293,10 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     }
     requestRender();
   } else {
+    if (s.groupEditId) {
+      s.groupEditId = null;
+      s.groupEditCandidateId = null;
+    }
     // Click on empty space — start box select (always, even if nothing selected)
     startBoxSelect(wp);
   }
@@ -278,6 +335,8 @@ export function finishBoxSelect(shiftKey) {
   if (bw < 3 / cam.zoom && bh < 3 / cam.zoom) {
     s.selectedId = null;
     s.selectedIds = [];
+    s.groupEditId = null;
+    s.groupEditCandidateId = null;
     requestRender();
     return;
   }
@@ -991,8 +1050,14 @@ function animateLocate() {
 
 export function clearAll() {
   if (!objects.length) return;
-  saveState(); objects.length = 0; state.selectedId = null; state.selectedIds = [];
-  requestRender(); showToast('Canvas cleared');
+  saveState();
+  objects.length = 0;
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  requestRender();
+  showToast('Canvas cleared');
 }
 
 // ── Image ──

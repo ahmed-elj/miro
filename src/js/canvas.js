@@ -37,6 +37,7 @@ function render() {
   }
   if (s.isDrawing) drawPreview(ctx);
   if (s.isBoxSelect) drawMarquee(ctx);
+  if (s.groupEditId && !s.isEditing) drawGroupEditFrame(ctx);
   if (s.selectedIds.length > 1 && !s.isEditing) drawGroupHandles(ctx);
   else if (s.selectedId !== null && !s.isEditing) drawHandles(ctx);
   if (s.locateEnd > 0) drawLocateHighlights(ctx);
@@ -430,6 +431,43 @@ function drawMarquee(c) {
   c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]);
   c.strokeRect(x, y, w, h);
+  c.setLineDash([]);
+  c.restore();
+}
+
+function drawGroupEditFrame(c) {
+  var s = state;
+  var bounds = [];
+  for (var i = 0; i < objects.length; i++) {
+    if (objects[i].groupId !== s.groupEditId) continue;
+    var b = getRotatedBounds(objects[i]);
+    if (b) bounds.push(b);
+  }
+  if (!bounds.length) return;
+  var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  bounds.forEach(function(b) {
+    x1 = Math.min(x1, b.x);
+    y1 = Math.min(y1, b.y);
+    x2 = Math.max(x2, b.x + b.w);
+    y2 = Math.max(y2, b.y + b.h);
+  });
+  var iz = 1 / cam.zoom;
+  var pad = 16 * iz;
+  var r = 14 * iz;
+  var x = x1 - pad;
+  var y = y1 - pad;
+  var w = x2 - x1 + pad * 2;
+  var h = y2 - y1 + pad * 2;
+
+  c.save();
+  roundedRect(c, x, y, w, h, r);
+  c.fillStyle = 'rgba(16, 185, 129, 0.04)';
+  c.fill();
+  roundedRect(c, x, y, w, h, r);
+  c.strokeStyle = 'rgba(16, 185, 129, 0.9)';
+  c.lineWidth = 2.5 * iz;
+  c.setLineDash([10 * iz, 6 * iz]);
+  c.stroke();
   c.setLineDash([]);
   c.restore();
 }

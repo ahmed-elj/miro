@@ -40,6 +40,8 @@ import {
   startStickyCreate,
   startEditExisting,
   finishEditing,
+  enterGroupEditForObject,
+  exitGroupEdit,
   updateEditorFS,
   updateEditorPosition,
   cycleSelect,
@@ -75,6 +77,8 @@ export function setToolActive(t) {
   });
   s.selectedId = null;
   s.selectedIds = [];
+  s.groupEditId = null;
+  s.groupEditCandidateId = null;
   updateCursor();
   requestRender();
 }
@@ -478,6 +482,8 @@ function setupPopupHandlers() {
     selected.forEach(function (obj) {
       obj.groupId = groupId;
     });
+    s.groupEditId = null;
+    s.groupEditCandidateId = null;
     s.selectedIds = selected.map(function (obj) { return obj.id; });
     s.selectedId = s.selectedIds[s.selectedIds.length - 1];
     s._lastPopupId = null;
@@ -495,6 +501,8 @@ function setupPopupHandlers() {
     objects.forEach(function (obj) {
       if (groupIds.indexOf(obj.groupId) >= 0) delete obj.groupId;
     });
+    if (groupIds.indexOf(s.groupEditId) >= 0) s.groupEditId = null;
+    s.groupEditCandidateId = null;
     s.selectedIds = s.selectedIds.filter(function (id) { return !!findObj(id); });
     s.selectedId = s.selectedIds.length ? s.selectedIds[s.selectedIds.length - 1] : null;
     s._lastPopupId = null;
@@ -693,6 +701,9 @@ function setupPopupHandlers() {
         var mult = Math.pow(2, val);
         var base = s._strokeBase || selObj.strokeWidth || 2;
         selObj.strokeWidth = base * mult;
+        if (selObj.type === "arrow") {
+          selObj.arrowHeadSize = Math.max(selObj.strokeWidth * 10, 18 / cam.zoom);
+        }
         var label =
           mult >= 1
             ? mult.toFixed(1) + "x"
@@ -795,6 +806,10 @@ function expandSelectionWithGroups(ids) {
     var obj = findObj(id);
     if (!obj) return;
     if (obj.groupId) {
+      if (state.groupEditId === obj.groupId) {
+        if (out.indexOf(id) < 0) out.push(id);
+        return;
+      }
       objects.forEach(function (other) {
         if (other.groupId === obj.groupId && out.indexOf(other.id) < 0) out.push(other.id);
       });
@@ -953,6 +968,7 @@ function onPointerDown(e) {
   s.dragGroupBounds = null;
   s.dragGroupRotation = 0;
   s.dragRotPointerOffset = 0;
+  s.groupEditCandidateId = null;
   var r = canvas.getBoundingClientRect(),
     sx = e.clientX - r.left,
     sy = e.clientY - r.top;
@@ -1058,7 +1074,8 @@ function onPointerUp(e) {
   }
   if (s.dragMode) {
     // If no undo was saved (no movement happened), treat as a click — cycle selection
-    if (!s.dragUndo && s.cycleHits) cycleSelect();
+    if (!s.dragUndo && s.groupEditCandidateId !== null) enterGroupEditForObject(s.groupEditCandidateId);
+    else if (!s.dragUndo && s.cycleHits) cycleSelect();
     s.dragMode = null;
     s.dragSW = null;
     s.dragSnap = null;
@@ -1071,6 +1088,7 @@ function onPointerUp(e) {
     s.dragGroupBounds = null;
     s.dragGroupRotation = 0;
     s.dragRotPointerOffset = 0;
+    s.groupEditCandidateId = null;
   }
 }
 
@@ -1118,6 +1136,10 @@ function setupKeyboard() {
     ) {
       e.preventDefault();
       delSel();
+      return;
+    }
+    if (e.key === "Escape" && s.groupEditId) {
+      exitGroupEdit(true);
       return;
     }
     if (e.key === "Escape" && s.selectedIds.length > 0) {

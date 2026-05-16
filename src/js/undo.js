@@ -20,6 +20,8 @@ export function undo() {
   restored.forEach(function(o) { objects.push(o); });
   state.selectedId = null;
   state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
   refreshImgCache();
   requestRender();
 }
@@ -32,6 +34,8 @@ export function redo() {
   restored.forEach(function(o) { objects.push(o); });
   state.selectedId = null;
   state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
   refreshImgCache();
   requestRender();
 }
@@ -52,6 +56,8 @@ export function delSel() {
   filtered.forEach(function(o) { objects.push(o); });
   s.selectedId = null;
   s.selectedIds = [];
+  s.groupEditId = null;
+  s.groupEditCandidateId = null;
   requestRender();
 }
 

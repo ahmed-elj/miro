@@ -24,6 +24,8 @@ export const imgCache = {};
 export const state = {
   selectedId: null,
   selectedIds: [],       // multiselect: array of all selected object IDs
+  groupEditId: null,     // groupId currently opened for editing individual members
+  groupEditCandidateId: null, // clicked selected group member that may open group edit on pointer up
   isBoxSelect: false,    // currently drawing a marquee selection box
   boxSelStart: null,     // world-space start point of marquee
   boxSelEnd: null,       // world-space end point of marquee
