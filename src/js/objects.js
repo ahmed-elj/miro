@@ -163,6 +163,56 @@ export function hitTest(obj, wx, wy) {
   return false;
 }
 
+export function hitBorder(obj, wx, wy) {
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var rb = getBounds(obj);
+    if (rb) {
+      var rcx = rb.x + rb.w / 2, rcy = rb.y + rb.h / 2;
+      var rp = inverseRotatePoint(wx, wy, rcx, rcy, rot);
+      wx = rp.x;
+      wy = rp.y;
+    }
+  }
+  var pad = Math.max(10, (obj.strokeWidth || 2) * 2) / cam.zoom;
+  switch (obj.type) {
+    case 'path':
+      return hitTestPath(obj, wx, wy, pad);
+    case 'line':
+    case 'arrow':
+      return hitTestLine(obj, wx, wy, pad);
+    case 'rect':
+    case 'sticky':
+    case 'image':
+    case 'text': {
+      var b = obj.type === 'rect' ? { x: obj.x, y: obj.y, w: obj.w, h: obj.h } : getBounds(obj);
+      return b ? hitBoundsBorder(b, wx, wy, pad) : false;
+    }
+    case 'ellipse':
+      return hitEllipseBorder(obj, wx, wy, pad);
+  }
+  return false;
+}
+
+function hitBoundsBorder(b, wx, wy, pad) {
+  var inX = wx >= b.x - pad && wx <= b.x + b.w + pad;
+  var inY = wy >= b.y - pad && wy <= b.y + b.h + pad;
+  var nearTop = Math.abs(wy - b.y) <= pad;
+  var nearBot = Math.abs(wy - (b.y + b.h)) <= pad;
+  var nearLeft = Math.abs(wx - b.x) <= pad;
+  var nearRight = Math.abs(wx - (b.x + b.w)) <= pad;
+  return (inX && (nearTop || nearBot)) || (inY && (nearLeft || nearRight));
+}
+
+function hitEllipseBorder(o, wx, wy, pad) {
+  var cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  var rx = Math.max(0.1, Math.abs(o.w / 2)), ry = Math.max(0.1, Math.abs(o.h / 2));
+  var dx = (wx - cx) / rx, dy = (wy - cy) / ry;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+  var t = pad / Math.min(rx, ry);
+  return Math.abs(dist - 1) <= t;
+}
+
 function hitTestPath(o, wx, wy, pad) {
   var t = Math.max(pad, (o.strokeWidth || 1) / 2 + pad);
   for (var i = 0; i < o.points.length - 1; i++) {

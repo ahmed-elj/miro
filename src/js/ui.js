@@ -16,7 +16,7 @@ import {
 } from "./constants.js";
 import { s2w, w2s, showToast, getArrowHeadMode } from "./utils.js";
 import { requestRender } from "./canvas.js";
-import { getBounds, getRotatedBounds, hitTest } from "./objects.js";
+import { getBounds, getRotatedBounds, hitTest, hitBorder } from "./objects.js";
 import { getSpans } from "./editor.js";
 import {
   saveState,
@@ -38,11 +38,13 @@ import {
   startShape,
   finishShape,
   startTextCreate,
+  startTextTool,
   startStickyCreate,
   startEditExisting,
   finishEditing,
   enterGroupEditForObject,
   exitGroupEdit,
+  selectTopAt,
   updateEditorFS,
   updateEditorPosition,
   cycleSelect,
@@ -417,6 +419,15 @@ function updatePopup() {
     ["path", "line", "arrow", "rect", "ellipse"].indexOf(selObj.type) >= 0;
   document.getElementById("popStrokeBtn").style.display =
     hasStroke || selObj.type === "text" ? "flex" : "none";
+  var canFill = ["rect", "ellipse"].indexOf(selObj.type) >= 0;
+  document.getElementById("popFillBtn").style.display = canFill ? "flex" : "none";
+  if (canFill) {
+    document.getElementById("popFillEnabled").checked = !!selObj.fill;
+    document.getElementById("popFillColor").value = normalizeHexColor(selObj.fillColor || selObj.color || "#e4e4e8");
+    document.querySelectorAll(".fill-style-btn").forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.fillStyle === (selObj.fillStyle || "solid"));
+    });
+  }
   // Only reset slider values when the selection changes
   if (s._lastPopupId !== selObj.id) {
     s._lastPopupId = selObj.id;
@@ -440,6 +451,15 @@ function updatePopup() {
       document.getElementById("popStrokeWeight").step = 0.1;
     }
   }
+}
+
+function normalizeHexColor(color) {
+  if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
+  if (typeof color === "string" && /^#[0-9a-fA-F]{8}$/.test(color)) return color.slice(0, 7);
+  if (typeof color === "string" && /^#[0-9a-fA-F]{3}$/.test(color)) {
+    return "#" + color.slice(1).split("").map(function (ch) { return ch + ch; }).join("");
+  }
+  return "#e4e4e8";
 }
 
 window.__updatePopup = updatePopup;
@@ -652,6 +672,12 @@ function setupPopupHandlers() {
       e.stopPropagation();
       toggleDropdown("popStrokeBtn", "popStrokeDropdown");
     });
+  document
+    .getElementById("popFillBtn")
+    .addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleDropdown("popFillBtn", "popFillDropdown");
+    });
   // Close dropdowns when clicking anywhere in the popup except inside a dropdown
   pop.addEventListener("click", function (e) {
     if (!e.target.closest(".pop-dropdown-wrap")) closeDropdowns();
@@ -818,6 +844,36 @@ function setupPopupHandlers() {
     .addEventListener("change", function () {
       saveState();
     });
+  document.getElementById("popFillEnabled").addEventListener("change", function (e) {
+    var o = findObj(s.selectedId);
+    if (!o || ["rect", "ellipse"].indexOf(o.type) < 0) return;
+    saveState();
+    o.fill = e.target.checked;
+    if (o.fill && !o.fillColor) o.fillColor = o.color || "#e4e4e8";
+    if (o.fill && !o.fillStyle) o.fillStyle = "solid";
+    requestRender();
+  });
+  document.getElementById("popFillColor").addEventListener("input", function (e) {
+    var o = findObj(s.selectedId);
+    if (!o || ["rect", "ellipse"].indexOf(o.type) < 0) return;
+    o.fill = true;
+    o.fillColor = e.target.value;
+    if (!o.fillStyle) o.fillStyle = "solid";
+    requestRender();
+  });
+  document.getElementById("popFillColor").addEventListener("change", saveState);
+  document.querySelectorAll(".fill-style-btn").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var o = findObj(s.selectedId);
+      if (!o || ["rect", "ellipse"].indexOf(o.type) < 0) return;
+      saveState();
+      o.fill = true;
+      o.fillStyle = btn.dataset.fillStyle || "solid";
+      if (!o.fillColor) o.fillColor = o.color || "#e4e4e8";
+      requestRender();
+    });
+  });
   document.getElementById("popLayerUp").addEventListener("click", function () {
     if (s.selectedIds.length > 1) {
       // Move all selected objects up as a group
@@ -1212,6 +1268,15 @@ function onPointerDown(e) {
     return;
   }
   if (e.button !== 0) return;
+  if (s.curTool !== "select") {
+    for (var bi = objects.length - 1; bi >= 0; bi--) {
+      if (hitBorder(objects[bi], wp.x, wp.y)) {
+        setToolActive("select");
+        onSelectDown(wp, sx, sy, e.shiftKey);
+        return;
+      }
+    }
+  }
   switch (s.curTool) {
     case "select":
       onSelectDown(wp, sx, sy, e.shiftKey);
@@ -1232,7 +1297,7 @@ function onPointerDown(e) {
       startShape(wp);
       break;
     case "text":
-      startTextCreate(wp);
+      startTextTool(wp, e.clientX, e.clientY);
       break;
     case "sticky":
       startStickyCreate(wp);
@@ -1290,6 +1355,10 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   var s = state;
+  var r = canvas.getBoundingClientRect(),
+    sx = e.clientX - r.left,
+    sy = e.clientY - r.top;
+  var wp = s2w(sx, sy);
   if (s.isPan) {
     s.isPan = false;
     updateCursor();
@@ -1302,8 +1371,13 @@ function onPointerUp(e) {
   if (s.isDrawing) {
     if (s.curTool === "pen") finishPen();
     else if (s.curTool === "eraser") finishErase();
-    else if (["line", "arrow", "rect", "ellipse"].indexOf(s.curTool) >= 0)
-      finishShape();
+    else if (["line", "arrow", "rect", "ellipse"].indexOf(s.curTool) >= 0) {
+      var createdShape = finishShape();
+      if (!createdShape) {
+        setToolActive("select");
+        selectTopAt(wp);
+      }
+    }
   }
   if (s.dragMode) {
     // If no undo was saved (no movement happened), treat as a click — cycle selection

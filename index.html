@@ -116,6 +116,23 @@
         </div>
       </div>
     </div>
+    <div class="pop-dropdown-wrap">
+      <button class="pbtn" id="popFillBtn" title="Fill"><i class="fa-solid fa-fill-drip" style="font-size:11px;"></i></button>
+      <div class="pop-dropdown pop-fill-dropdown" id="popFillDropdown">
+        <div class="pop-dropdown-label">Fill</div>
+        <label class="pop-check-row"><input type="checkbox" id="popFillEnabled"> <span>Enabled</span></label>
+        <div class="pop-fill-color-row">
+          <span>Color</span>
+          <input type="color" id="popFillColor" value="#e4e4e8">
+        </div>
+        <div class="pop-fill-style-grid" id="popFillStyles">
+          <button class="fill-style-btn" data-fill-style="solid" type="button">Solid</button>
+          <button class="fill-style-btn" data-fill-style="grain" type="button">Grain</button>
+          <button class="fill-style-btn" data-fill-style="sketch" type="button">Sketch</button>
+          <button class="fill-style-btn" data-fill-style="crosshatch" type="button">Hatch</button>
+        </div>
+      </div>
+    </div>
     <div class="popup-sep"></div>
     <button class="pbtn" id="popLayerUp" title="Bring forward"><i class="fa-solid fa-chevron-up" style="font-size:11px;"></i></button>
     <button class="pbtn" id="popLayerDn" title="Send backward"><i class="fa-solid fa-chevron-down" style="font-size:11px;"></i></button>

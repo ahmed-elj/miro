@@ -186,15 +186,68 @@ function drawArrow(c, o) {
 }
 
 function drawRect(c, o) {
-  if (o.fill) { c.fillStyle = o.fillColor; c.fillRect(o.x, o.y, o.w, o.h); }
+  if (o.fill) fillShape(c, o, function() { c.rect(o.x, o.y, o.w, o.h); });
   c.strokeStyle = o.color; c.lineWidth = o.strokeWidth; c.strokeRect(o.x, o.y, o.w, o.h);
 }
 
 function drawEllipse(c, o) {
   c.beginPath();
   c.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.max(0.1, Math.abs(o.w / 2)), Math.max(0.1, Math.abs(o.h / 2)), 0, 0, Math.PI * 2);
-  if (o.fill) { c.fillStyle = o.fillColor; c.fill(); }
+  if (o.fill) fillShape(c, o, function() {
+    c.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.max(0.1, Math.abs(o.w / 2)), Math.max(0.1, Math.abs(o.h / 2)), 0, 0, Math.PI * 2);
+  });
+  c.beginPath();
+  c.ellipse(o.x + o.w / 2, o.y + o.h / 2, Math.max(0.1, Math.abs(o.w / 2)), Math.max(0.1, Math.abs(o.h / 2)), 0, 0, Math.PI * 2);
   c.strokeStyle = o.color; c.lineWidth = o.strokeWidth; c.stroke();
+}
+
+function fillShape(c, o, pathFn) {
+  var color = o.fillColor || o.color || '#e4e4e8';
+  var style = o.fillStyle || 'solid';
+  c.save();
+  c.beginPath();
+  pathFn();
+  c.clip();
+  c.fillStyle = hexToRgba(color, style === 'solid' ? 0.28 : 0.2);
+  c.fillRect(o.x, o.y, o.w, o.h);
+  if (style === 'grain') drawFillGrain(c, o, color);
+  else if (style === 'sketch') drawFillSketch(c, o, color, false);
+  else if (style === 'crosshatch') drawFillSketch(c, o, color, true);
+  c.restore();
+}
+
+function drawFillGrain(c, o, color) {
+  var area = Math.abs(o.w * o.h);
+  var count = Math.min(260, Math.max(24, Math.floor(area / 180)));
+  c.fillStyle = hexToRgba(color, 0.32);
+  for (var i = 0; i < count; i++) {
+    var seed = Math.sin((o.id || 1) * 101 + i * 97) * 10000;
+    var rx = seed - Math.floor(seed);
+    seed = Math.sin((o.id || 1) * 211 + i * 131) * 10000;
+    var ry = seed - Math.floor(seed);
+    var r = Math.max(0.6, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.006);
+    c.beginPath();
+    c.arc(o.x + rx * o.w, o.y + ry * o.h, r, 0, Math.PI * 2);
+    c.fill();
+  }
+}
+
+function drawFillSketch(c, o, color, cross) {
+  c.strokeStyle = hexToRgba(color, 0.36);
+  c.lineWidth = Math.max(0.8 / cam.zoom, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.006);
+  var step = Math.max(8 / cam.zoom, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.12);
+  drawHatchLines(c, o, step, 1);
+  if (cross) drawHatchLines(c, o, step, -1);
+}
+
+function drawHatchLines(c, o, step, dir) {
+  var x0 = o.x - Math.abs(o.h), x1 = o.x + o.w + Math.abs(o.h);
+  for (var x = x0; x <= x1; x += step) {
+    c.beginPath();
+    c.moveTo(x, o.y + (dir > 0 ? o.h : 0));
+    c.lineTo(x + Math.abs(o.h), o.y + (dir > 0 ? 0 : o.h));
+    c.stroke();
+  }
 }
 
 function drawText(c, o) {
@@ -326,12 +379,16 @@ function drawPreview(c) {
       arrowHeadSize: Math.max(s.curStroke * 5, 18) / cam.zoom,
     });
   } else if (s.curTool === 'rect') {
-    if (s.fillOn) { c.fillStyle = s.curColor + '33'; c.fillRect(x, y, w, h); }
+    if (s.fillOn) fillShape(c, { x: x, y: y, w: w, h: h, color: s.curColor, fillColor: s.curColor, fillStyle: 'solid' }, function() { c.rect(x, y, w, h); });
     c.strokeRect(x, y, w, h);
   } else if (s.curTool === 'ellipse') {
     c.beginPath();
     c.ellipse(x + w / 2, y + h / 2, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
-    if (s.fillOn) { c.fillStyle = s.curColor + '33'; c.fill(); }
+    if (s.fillOn) fillShape(c, { x: x, y: y, w: w, h: h, color: s.curColor, fillColor: s.curColor, fillStyle: 'solid' }, function() {
+      c.ellipse(x + w / 2, y + h / 2, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
+    });
+    c.beginPath();
+    c.ellipse(x + w / 2, y + h / 2, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
     c.stroke();
   }
   c.restore();
@@ -512,46 +569,7 @@ function drawGroupHandles(c) {
   if (!gb) return;
   c.save();
   var iz = 1 / cam.zoom;
-  // Draw individual dashed outlines for each selected object
-  c.strokeStyle = accent;
-  c.lineWidth = 1.5 * iz;
-  c.setLineDash([6 * iz, 4 * iz]);
-  for (var i = 0; i < objects.length; i++) {
-    var obj = objects[i];
-    if (s.selectedIds.indexOf(obj.id) < 0) continue;
-    if (obj.type === 'arrow') {
-      var bend = getArrowBendHandle(obj);
-      var cp = getArrowControlPoint(obj);
-      c.save();
-      c.beginPath();
-      c.moveTo(obj.x1, obj.y1);
-      c.quadraticCurveTo(cp.x, cp.y, obj.x2, obj.y2);
-      c.stroke();
-      if (bend) {
-        c.setLineDash([]);
-        c.beginPath();
-        c.arc(bend.x, bend.y, HANDLE_SIZE * 0.85 * iz, 0, Math.PI * 2);
-        c.fillStyle = accent;
-        c.fill();
-        c.setLineDash([6 * iz, 4 * iz]);
-      }
-      c.restore();
-      continue;
-    }
-    var b = getBounds(obj);
-    if (b) {
-      c.save();
-      var rot = obj.rotation || 0;
-      if (rot) {
-        var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-        c.translate(cx, cy); c.rotate(rot); c.translate(-cx, -cy);
-      }
-      c.strokeRect(b.x, b.y, b.w, b.h);
-      c.restore();
-    }
-  }
-  c.setLineDash([]);
-  // Draw unified group bounding box with solid line and corner handles
+  // Draw unified group bounding box with corner handles.
   var groupRot = s.groupRotation || 0;
   var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
   if (groupRot) {

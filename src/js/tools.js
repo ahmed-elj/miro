@@ -4,7 +4,7 @@
 
 import { cam, objects, imgCache, state, gid } from './state.js';
 import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT, ROTATE_HANDLE_DIST } from './constants.js';
-import { s2w, w2s, showToast, getArrowBendHandle } from './utils.js';
+import { s2w, w2s, showToast, getArrowBendHandle, ptSegDist } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
 import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
@@ -59,6 +59,22 @@ export function exitGroupEdit(selectGroup) {
   state._lastPopupId = null;
   requestRender();
   return true;
+}
+
+export function selectTopAt(wp) {
+  for (var i = objects.length - 1; i >= 0; i--) {
+    if (hitTest(objects[i], wp.x, wp.y)) {
+      setSelectionFromObject(objects[i].id);
+      requestRender();
+      return true;
+    }
+  }
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  requestRender();
+  return false;
 }
 
 function snapshotMultiDrag(ids) {
@@ -807,14 +823,75 @@ export function finishPen() {
   var s = state;
   s.isDrawing = false;
   if (s.curPath.length >= 2) {
-      addObj({
-        type: 'path', id: gid(), points: s.curPath.map(function(p) { return { x: p.x, y: p.y }; }),
-        color: s.curColor, strokeWidth: s.curStroke / cam.zoom, opacity: 1, rotation: 0,
-      });
+    var pts = s.curPath.map(function(p) { return { x: p.x, y: p.y }; });
+    var sw = s.curStroke / cam.zoom;
+    addPenPath(pts, s.curColor, sw);
   }
   s.curPath = [];
   s.drawSt = null;
   s.drawCur = null;
+}
+
+function addPenPath(points, color, strokeWidth) {
+  var now = Date.now();
+  var next = {
+    type: 'path', id: gid(), points: points,
+    color: color, strokeWidth: strokeWidth, opacity: 1, rotation: 0,
+    createdAt: now, penGroupUpdatedAt: now,
+  };
+  var linked = findNearbyPenPath(points, color, strokeWidth, now);
+  if (!linked) {
+    addObj(next);
+    return;
+  }
+  saveState();
+  var groupId = linked.groupId || nextGroupId();
+  linked.groupId = groupId;
+  next.groupId = groupId;
+  objects.forEach(function(obj) {
+    if (obj.groupId === groupId) obj.penGroupUpdatedAt = now;
+  });
+  objects.push(next);
+  requestRender();
+}
+
+function findNearbyPenPath(points, color, strokeWidth, now) {
+  if (!points || points.length < 2) return null;
+  var zone = 56 / cam.zoom;
+  var timeWindow = 6000;
+  var best = null;
+  for (var i = objects.length - 1; i >= 0; i--) {
+    var obj = objects[i];
+    if (!obj || obj.type !== 'path' || !obj.points || obj.points.length < 2) continue;
+    var lastDrawn = obj.penGroupUpdatedAt || obj.createdAt || 0;
+    if (lastDrawn && now - lastDrawn > timeWindow) continue;
+    var d = pathDistance(points, obj.points);
+    if (d <= zone && (!best || d < best.dist)) best = { obj: obj, dist: d };
+  }
+  return best && best.obj;
+}
+
+function pathDistance(a, b) {
+  var best = Infinity;
+  for (var i = 0; i < a.length; i++) {
+    best = Math.min(best, pointPathDistance(a[i], b));
+  }
+  for (var j = 0; j < b.length; j++) {
+    best = Math.min(best, pointPathDistance(b[j], a));
+  }
+  return best;
+}
+
+function pointPathDistance(p, points) {
+  var best = Infinity;
+  for (var i = 0; i < points.length - 1; i++) {
+    best = Math.min(best, ptSegDist(p.x, p.y, points[i].x, points[i].y, points[i + 1].x, points[i + 1].y));
+  }
+  return best;
+}
+
+function nextGroupId() {
+  return 'grp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
 // ── Eraser ──
@@ -848,19 +925,20 @@ export function startShape(wp) {
 export function finishShape() {
   var s = state;
   s.isDrawing = false;
-  if (!s.drawSt || !s.drawCur) return;
+  if (!s.drawSt || !s.drawCur) return false;
   var x1 = s.drawSt.x, y1 = s.drawSt.y, x2 = s.drawCur.x, y2 = s.drawCur.y;
   if (Math.abs(x2 - x1) < 3 / cam.zoom && Math.abs(y2 - y1) < 3 / cam.zoom) {
-    s.drawSt = null; s.drawCur = null; s.arrowPreviewBend = 0; return;
+    s.drawSt = null; s.drawCur = null; s.arrowPreviewBend = 0; return false;
   }
   var sw = s.curStroke / cam.zoom;
   if (s.curTool === 'line') addObj({ type: 'line', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
   else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, bend: s.arrowPreviewBend || 0, arrowHeads: 'end', arrowHeadSize: Math.max(s.curStroke * 5, 18) / cam.zoom, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
-  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
-  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
+  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', opacity: 1, rotation: 0 });
+  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', opacity: 1, rotation: 0 });
   s.drawSt = null;
   s.drawCur = null;
   s.arrowPreviewBend = 0;
+  return true;
 }
 
 // ── Text create ──
@@ -872,6 +950,8 @@ export function startTextCreate(wp) {
   ed.style.display = 'block';
   ed.style.left = sp.x + 'px'; ed.style.top = sp.y + 'px';
   ed.style.transform = 'translate(-50%, -50%)';
+  ed.style.transformOrigin = 'center center';
+  ed.style.minWidth = '60px';
   ed.style.color = s.curColor;
   ed.style.fontSize = wfs * cam.zoom + 'px';
   ed.style.fontWeight = '400'; ed.style.fontStyle = 'normal'; ed.style.textDecoration = 'none';
@@ -879,6 +959,16 @@ export function startTextCreate(wp) {
   s.isEditing = true; s.editId = 'new-text';
   ed.dataset.wx = wp.x; ed.dataset.wy = wp.y; ed.dataset.wfs = wfs; ed.dataset.color = s.curColor;
   setTimeout(function() { ed.focus(); requestRender(); }, 80);
+}
+
+export function startTextTool(wp, clientX, clientY) {
+  for (var i = objects.length - 1; i >= 0; i--) {
+    if (objects[i].type === 'text' && hitTest(objects[i], wp.x, wp.y)) {
+      startEditExisting(objects[i], { x: clientX, y: clientY });
+      return;
+    }
+  }
+  startTextCreate(wp);
 }
 
 // ── Sticky create ──
@@ -900,7 +990,7 @@ export function startStickyCreate(wp) {
 }
 
 // ── Edit existing text/sticky ──
-export function startEditExisting(obj) {
+export function startEditExisting(obj, caretPoint) {
   var s = state;
   s.selectedId = obj.id;
   s.selectedIds = [obj.id];
@@ -908,16 +998,21 @@ export function startEditExisting(obj) {
   if (obj.type === 'text') {
     var ed = document.getElementById('textEditor');
     var tsp = w2s(obj.x, obj.y);
-ed.style.display = 'block';
-ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
-ed.style.transform = 'translate(-50%, -50%) scale(' + (obj.scaleX || 1) + ', ' + (obj.scaleY || 1) + ')';
-ed.style.transformOrigin = 'center center';
-  ed.style.color = obj.color || '#e4e4e8';
+    ed.style.display = 'block';
+    ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
+    ed.style.transform = getTextEditorTransform(obj);
+    ed.style.transformOrigin = 'center center';
+    ed.style.minWidth = '0';
+    ed.style.color = obj.color || '#e4e4e8';
     ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
     ed.style.fontWeight = '400'; ed.style.fontStyle = 'normal'; ed.style.textDecoration = 'none';
     ed.innerHTML = spansToHtml(getSpans(obj));
     s.isEditing = true; s.editId = obj.id;
-    setTimeout(function() { ed.focus(); requestRender(); }, 80);
+    setTimeout(function() {
+      ed.focus();
+      if (caretPoint) placeCaretAtPoint(ed, caretPoint.x, caretPoint.y);
+      requestRender();
+    }, 80);
   } else if (obj.type === 'sticky') {
     var ed2 = document.getElementById('stickyEditor');
     ed2.style.display = 'block';
@@ -934,6 +1029,29 @@ ed.style.transformOrigin = 'center center';
   requestRender();
 }
 
+function placeCaretAtPoint(el, clientX, clientY) {
+  var range = null;
+  if (document.caretPositionFromPoint) {
+    var pos = document.caretPositionFromPoint(clientX, clientY);
+    if (pos) {
+      range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  } else if (document.caretRangeFromPoint) {
+    range = document.caretRangeFromPoint(clientX, clientY);
+  }
+  if (!range || !el.contains(range.startContainer)) {
+    range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+  }
+  var sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 // ── Finish editing ──
 export function finishEditing() {
   var s = state;
@@ -945,7 +1063,7 @@ export function finishEditing() {
     var spans = parseHtmlSpans(te, te.dataset.color || s.curColor);
     var text = spans.map(function(sp) { return sp.text; }).join('').trim();
     if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, scaleX: 1, scaleY: 1, color: te.dataset.color || s.curColor, opacity: 1, rotation: 0 });
-    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = '';
+    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
     addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1, rotation: 0 });
@@ -955,7 +1073,7 @@ export function finishEditing() {
     if (obj) {
       if (obj.type === 'text' && teVisible) {
         saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
-        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = '';
+        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = '';
       } else if (obj.type === 'sticky' && se.style.display === 'block') {
         saveState(); obj.text = se.value || 'Note';
         se.style.display = 'none'; se.value = '';
@@ -969,6 +1087,13 @@ export function finishEditing() {
 export function updateEditorFS(obj) {
   var ed = document.getElementById('textEditor');
   ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
+}
+
+function getTextEditorTransform(obj) {
+  var rot = obj.rotation || 0;
+  var sx = obj.scaleX || 1;
+  var sy = obj.scaleY || 1;
+  return 'translate(-50%, -50%) rotate(' + rot + 'rad) scale(' + sx + ', ' + sy + ') translateY(-0.08em)';
 }
 
 // ── Keep editor overlay in sync with camera ──
@@ -987,8 +1112,13 @@ export function updateEditorPosition() {
     te.style.transform = 'translate(-50%, -50%)';
     if (obj && obj.type === 'text') {
       te.style.fontSize = obj.fontSize * cam.zoom + 'px';
-      te.style.transform = 'translate(-50%, -50%) scale(' + (obj.scaleX || 1) + ', ' + (obj.scaleY || 1) + ')';
+      te.style.transform = getTextEditorTransform(obj);
       te.style.transformOrigin = 'center center';
+      te.style.minWidth = '0';
+    } else if (s.editId === 'new-text') {
+      te.style.fontSize = (+te.dataset.wfs || 20 / cam.zoom) * cam.zoom + 'px';
+      te.style.transformOrigin = 'center center';
+      te.style.minWidth = '60px';
     }
   }
   if (se.style.display === 'block') {
@@ -1002,6 +1132,10 @@ export function updateEditorPosition() {
       se.style.width = Math.max(80, sobj.w * cam.zoom) + 'px';
       se.style.height = Math.max(80, sobj.h * cam.zoom) + 'px';
       se.style.fontSize = Math.max(10, sobj.fontSize * cam.zoom) + 'px';
+    } else if (s.editId === 'new-sticky') {
+      se.style.width = Math.max(80, (+se.dataset.w || 200 / cam.zoom) * cam.zoom) + 'px';
+      se.style.height = Math.max(80, (+se.dataset.h || 200 / cam.zoom) * cam.zoom) + 'px';
+      se.style.fontSize = Math.max(10, (+se.dataset.wfs || 16 / cam.zoom) * cam.zoom) + 'px';
     }
   }
 }
