@@ -82,7 +82,8 @@ export function getBounds(obj) {
     });
     maxW = Math.max(maxW, lw);
   });
-  var w = maxW * sc || 1, h = lines.length * rS * 1.4 * sc || obj.fontSize;
+  var scaleX = obj.scaleX || 1, scaleY = obj.scaleY || 1;
+  var w = (maxW * sc || 1) * scaleX, h = (lines.length * rS * 1.4 * sc || obj.fontSize) * scaleY;
   return { x: obj.x - w / 2, y: obj.y - h / 2, w: w, h: h };
 }
   }
@@ -265,10 +266,19 @@ export function hitHandle(obj, wx, wy) {
     { k: 'resize-bl', x: b.x, y: b.y + b.h },
     { k: 'resize-br', x: b.x + b.w, y: b.y + b.h },
   ];
+  var best = null;
+  var bestDist = Infinity;
   for (var i = 0; i < cs.length; i++) {
-    if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) return cs[i].k;
+    if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) {
+      var dx = wx - cs[i].x, dy = wy - cs[i].y;
+      var dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        best = cs[i].k;
+        bestDist = dist;
+      }
+    }
   }
-  return null;
+  return best;
 }
 
 export function getArrowTangentVector(obj, atEnd) {

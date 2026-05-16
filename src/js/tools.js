@@ -157,13 +157,6 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     var obj = findObj(s.selectedId);
     var arrowEndpoint = hitArrowEndpointHandle(obj, wp.x, wp.y);
     if (arrowEndpoint) {
-      if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
-        var bendHandle = getArrowBendHandle(obj);
-        if (bendHandle) {
-          obj.cpX = bendHandle.x;
-          obj.cpY = bendHandle.y;
-        }
-      }
       s.dragMode = arrowEndpoint;
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(obj));
@@ -459,10 +452,19 @@ export function hitHandleBounds(b, wx, wy) {
     { k: 'resize-bl', x: b.x, y: b.y + b.h },
     { k: 'resize-br', x: b.x + b.w, y: b.y + b.h },
   ];
+  var best = null;
+  var bestDist = Infinity;
   for (var i = 0; i < cs.length; i++) {
-    if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) return cs[i].k;
+    if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) {
+      var dx = wx - cs[i].x, dy = wy - cs[i].y;
+      var dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        best = cs[i].k;
+        bestDist = dist;
+      }
+    }
   }
-  return null;
+  return best;
 }
 
 // ── Resize a single object relative to a group anchor + scale factors ──
@@ -489,10 +491,11 @@ function scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy) {
     }
     break;
   case 'text':
-    // For text, x/y is the center point — scale it, and scale fontSize
+    // For text, x/y is the center point; resized text can be scaled per axis.
     obj.x = anchorX + (snap.x - anchorX) * sx;
     obj.y = anchorY + (snap.y - anchorY) * sy;
-    obj.fontSize = snap.fontSize * Math.max(0.05, (Math.abs(sx) + Math.abs(sy)) / 2);
+    obj.scaleX = Math.max(0.05, (snap.scaleX || 1) * Math.abs(sx));
+    obj.scaleY = Math.max(0.05, (snap.scaleY || 1) * Math.abs(sy));
     break;
   case 'sticky':
     // Sticky: x/y is top-left; scale position, size, and font proportionally
@@ -754,25 +757,35 @@ function applyStickyResize(o, snap, dx, dy) {
 
 function applyTextResize(obj, snap, dx, dy) {
   var ob = getBounds(snap);
-  if (!ob || ob.w < 1 || ob.h < 1) return;
+  if (!ob || ob.w <= 0.000001 || ob.h <= 0.000001) {
+    return;
+  }
   var dm = state.dragMode;
-  // Anchor the opposite edge/corner in world space
-  var ax, ay;
-  if (dm === 'resize-br') { ax = ob.x; ay = ob.y; }
-  else if (dm === 'resize-bl') { ax = ob.x + ob.w; ay = ob.y; }
-  else if (dm === 'resize-tr') { ax = ob.x; ay = ob.y + ob.h; }
-  else { ax = ob.x + ob.w; ay = ob.y + ob.h; }
-  var sx2 = (ob.w + (dm === 'resize-bl' || dm === 'resize-tl' ? -dx : dx)) / ob.w;
-  var sy2 = (ob.h + (dm === 'resize-tr' || dm === 'resize-tl' ? -dy : dy)) / ob.h;
-  var sc = Math.max(0.1, (Math.abs(sx2) + Math.abs(sy2)) / 2);
-  obj.fontSize = snap.fontSize * sc;
-  var nb = getBounds(obj);
-  if (nb) {
-    // (obj.x, obj.y) is center of bounds
-    if (dm === 'resize-br' || dm === 'resize-tr') obj.x = ax + nb.w / 2;
-    else obj.x = ax - nb.w / 2;
-    if (dm === 'resize-br' || dm === 'resize-bl') obj.y = ay + nb.h / 2;
-    else obj.y = ay - nb.h / 2;
+  var ax, ay, cx, cy;
+  if (dm === 'resize-br') {
+    ax = ob.x; ay = ob.y; cx = ob.x + ob.w + dx; cy = ob.y + ob.h + dy;
+  } else if (dm === 'resize-bl') {
+    ax = ob.x + ob.w; ay = ob.y; cx = ob.x + dx; cy = ob.y + ob.h + dy;
+  } else if (dm === 'resize-tr') {
+    ax = ob.x; ay = ob.y + ob.h; cx = ob.x + ob.w + dx; cy = ob.y + dy;
+  } else {
+    ax = ob.x + ob.w; ay = ob.y + ob.h; cx = ob.x + dx; cy = ob.y + dy;
+  }
+  obj.fontSize = snap.fontSize;
+  obj.scaleX = Math.max(0.1, (snap.scaleX || 1) * Math.abs(cx - ax) / ob.w);
+  obj.scaleY = Math.max(0.1, (snap.scaleY || 1) * Math.abs(cy - ay) / ob.h);
+  var localCenterX = (ax + cx) / 2;
+  var localCenterY = (ay + cy) / 2;
+  if (snap.rotation || 0) {
+    var snapBounds = getBounds(snap);
+    var snapCx = snapBounds.x + snapBounds.w / 2;
+    var snapCy = snapBounds.y + snapBounds.h / 2;
+    var rotatedCenter = rotateAroundPoint(localCenterX, localCenterY, snapCx, snapCy, snap.rotation || 0);
+    obj.x = rotatedCenter.x;
+    obj.y = rotatedCenter.y;
+  } else {
+    obj.x = localCenterX;
+    obj.y = localCenterY;
   }
 }
 
@@ -897,7 +910,8 @@ export function startEditExisting(obj) {
     var tsp = w2s(obj.x, obj.y);
 ed.style.display = 'block';
 ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
-ed.style.transform = 'translate(-50%, -50%)';
+ed.style.transform = 'translate(-50%, -50%) scale(' + (obj.scaleX || 1) + ', ' + (obj.scaleY || 1) + ')';
+ed.style.transformOrigin = 'center center';
   ed.style.color = obj.color || '#e4e4e8';
     ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
     ed.style.fontWeight = '400'; ed.style.fontStyle = 'normal'; ed.style.textDecoration = 'none';
@@ -910,7 +924,7 @@ ed.style.transform = 'translate(-50%, -50%)';
     ed2.style.left = sp.x + 'px'; ed2.style.top = sp.y + 'px';
     ed2.style.width = Math.max(80, obj.w * cam.zoom) + 'px';
     ed2.style.height = Math.max(80, obj.h * cam.zoom) + 'px';
-    ed2.style.backgroundColor = obj.bgColor;
+    ed2.style.backgroundColor = 'transparent';
     ed2.style.fontSize = Math.max(10, obj.fontSize * cam.zoom) + 'px';
     ed2.style.color = '#1a1a1f';
     ed2.value = obj.text;
@@ -930,7 +944,7 @@ export function finishEditing() {
   if (s.editId === 'new-text' && teVisible) {
     var spans = parseHtmlSpans(te, te.dataset.color || s.curColor);
     var text = spans.map(function(sp) { return sp.text; }).join('').trim();
-    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, color: te.dataset.color || s.curColor, opacity: 1, rotation: 0 });
+    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, scaleX: 1, scaleY: 1, color: te.dataset.color || s.curColor, opacity: 1, rotation: 0 });
     te.style.display = 'none'; te.innerHTML = ''; te.style.transform = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
@@ -973,6 +987,8 @@ export function updateEditorPosition() {
     te.style.transform = 'translate(-50%, -50%)';
     if (obj && obj.type === 'text') {
       te.style.fontSize = obj.fontSize * cam.zoom + 'px';
+      te.style.transform = 'translate(-50%, -50%) scale(' + (obj.scaleX || 1) + ', ' + (obj.scaleY || 1) + ')';
+      te.style.transformOrigin = 'center center';
     }
   }
   if (se.style.display === 'block') {
@@ -1092,7 +1108,7 @@ export function exportPNG() {
   var pd = 40, w = c2 - a + pd * 2, h = d - b + pd * 2, sc = 2;
   var tc = document.createElement('canvas'), tctx = tc.getContext('2d');
   tc.width = w * sc; tc.height = h * sc;
-  tctx.scale(sc, sc); tctx.fillStyle = '#1a1a1f'; tctx.fillRect(0, 0, w, h);
+  tctx.scale(sc, sc); tctx.fillStyle = state.settings.canvasColor; tctx.fillRect(0, 0, w, h);
   tctx.translate(-a + pd, -b + pd);
   objects.forEach(function(o) { drawObject(tctx, o); });
   var link = document.createElement('a');

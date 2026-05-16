@@ -226,6 +226,158 @@ canvas#board {
   border-color: var(--danger);
 }
 
+/* === Options Panel === */
+#optionsPanel {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  z-index: 45;
+  display: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popup);
+  padding: 14px;
+}
+
+#optionsPanel.open {
+  display: block;
+}
+
+.options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.options-head h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.options-close,
+.options-reset,
+.keybind-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.options-close {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+}
+
+.options-close:hover,
+.options-reset:hover,
+.keybind-btn:hover {
+  background: var(--border);
+}
+
+.options-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.options-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.option-title,
+.option-color span,
+.option-field span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.option-color,
+.option-field,
+.keybind-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.option-field,
+.keybind-row {
+  justify-content: space-between;
+}
+
+.option-color + .option-color {
+  margin-top: 9px;
+}
+
+.option-color input[type="color"] {
+  order: -1;
+  width: 44px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.option-field select {
+  min-width: 132px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family);
+  padding: 0 8px;
+}
+
+.keybind-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.keybind-name {
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.keybind-btn {
+  min-width: 74px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.keybind-btn.capturing {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.options-reset {
+  width: 100%;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 /* === Bottom Bar === */
 #bottombar {
   position: absolute;
@@ -300,15 +452,29 @@ caret-color: var(--accent);
   position: absolute;
   z-index: 30;
   display: none;
-  border: none;
-  outline: none;
+  border: 0 !important;
+  outline: 0 !important;
   resize: none;
   font-family: var(--font-family);
   padding: 14px;
   overflow: hidden;
   line-height: 1.5;
   border-radius: 6px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+  caret-color: var(--accent);
+}
+
+#stickyEditor:focus,
+#stickyEditor:focus-visible,
+#stickyEditor:active {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 /* === Toast Notifications === */

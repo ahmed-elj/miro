@@ -40,7 +40,36 @@
     <button class="action-btn" id="undoBtn" title="Undo"><i class="fa-solid fa-rotate-left"></i></button>
     <button class="action-btn" id="redoBtn" title="Redo"><i class="fa-solid fa-rotate-right"></i></button>
     <button class="action-btn danger" id="clearBtn" title="Clear all"><i class="fa-solid fa-xmark"></i></button>
+    <div class="opt-sep"></div>
+    <button class="action-btn" id="optionsBtn" title="Options"><i class="fa-solid fa-gear"></i></button>
   </div>
+
+  <section id="optionsPanel" aria-label="Options">
+    <div class="options-head">
+      <h2>Options</h2>
+      <button class="options-close" id="optionsClose" title="Close options"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="options-section">
+      <label class="option-color"><span>Accent</span><input type="color" id="accentColor" value="#10b981"></label>
+      <label class="option-color"><span>Board</span><input type="color" id="canvasColor" value="#1a1a1f"></label>
+      <label class="option-color"><span>Pattern</span><input type="color" id="gridColor" value="#28282f"></label>
+    </div>
+    <div class="options-section">
+      <label class="option-field">
+        <span>Background Pattern</span>
+        <select id="bgPattern">
+          <option value="dots">Dots</option>
+          <option value="grid">Grid</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+    </div>
+    <div class="options-section">
+      <div class="option-title">Tool Shortcuts</div>
+      <div id="keybindList" class="keybind-list"></div>
+    </div>
+    <button class="options-reset" id="resetOptions">Reset options</button>
+  </section>
 
   <div id="itemPopup">
   <div class="popup-row" id="popTextRow" style="display:none;">

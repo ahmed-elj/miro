@@ -40,6 +40,14 @@ export const KEY_MAP = {
   KeyS: 'sticky',
 };
 
+export const DEFAULT_SETTINGS = {
+  accentColor: '#10b981',
+  canvasColor: '#1a1a1f',
+  gridColor: '#28282f',
+  bgPattern: 'dots',
+  keyMap: Object.assign({}, KEY_MAP),
+};
+
 /** Tool → cursor CSS class mapping */
 export const CURSOR_MAP = {
   select: 'cursor-default',

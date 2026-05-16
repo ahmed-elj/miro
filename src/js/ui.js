@@ -8,6 +8,7 @@ import {
   STICKY_COLORS,
   STROKE_WIDTHS,
   KEY_MAP,
+  DEFAULT_SETTINGS,
   CURSOR_MAP,
   STORAGE_KEY,
   ROTATE_HANDLE_DIST,
@@ -57,6 +58,106 @@ import {
   insertImg,
   exportPNG,
 } from "./tools.js";
+
+var TOOL_META = [
+  { tool: "select", label: "Select" },
+  { tool: "hand", label: "Pan" },
+  { tool: "pen", label: "Pen" },
+  { tool: "eraser", label: "Eraser" },
+  { tool: "line", label: "Line" },
+  { tool: "arrow", label: "Arrow" },
+  { tool: "rect", label: "Rectangle" },
+  { tool: "ellipse", label: "Ellipse" },
+  { tool: "text", label: "Text" },
+  { tool: "sticky", label: "Sticky Note" },
+  { tool: "image", label: "Image" },
+];
+
+function codeToLabel(code) {
+  if (!code) return "None";
+  if (code.indexOf("Key") === 0) return code.slice(3);
+  if (code.indexOf("Digit") === 0) return code.slice(5);
+  if (code === "Minus") return "-";
+  if (code === "Equal") return "=";
+  if (code === "BracketLeft") return "[";
+  if (code === "BracketRight") return "]";
+  if (code === "Semicolon") return ";";
+  if (code === "Quote") return "'";
+  if (code === "Comma") return ",";
+  if (code === "Period") return ".";
+  if (code === "Slash") return "/";
+  if (code === "Backslash") return "\\";
+  return code.replace(/^(Numpad|Arrow)/, "");
+}
+
+function getToolKeyCode(tool) {
+  var map = state.settings.keyMap || {};
+  for (var code in map) {
+    if (map[code] === tool) return code;
+  }
+  return "";
+}
+
+function syncKeyMap() {
+  Object.keys(KEY_MAP).forEach(function (code) {
+    delete KEY_MAP[code];
+  });
+  var map = state.settings.keyMap || {};
+  Object.keys(map).forEach(function (code) {
+    if (map[code]) KEY_MAP[code] = map[code];
+  });
+}
+
+function updateShortcutLabels() {
+  document.querySelectorAll(".tool-btn").forEach(function (btn) {
+    var code = getToolKeyCode(btn.dataset.tool);
+    var label = codeToLabel(code);
+    var span = btn.querySelector(".shortcut");
+    if (code) {
+      if (!span) {
+        span = document.createElement("span");
+        span.className = "shortcut";
+        btn.appendChild(span);
+      }
+      span.textContent = label;
+    } else if (span) {
+      span.remove();
+    }
+    var title = btn.getAttribute("title") || "";
+    var base = title.replace(/\s*\([^)]*\)\s*$/, "");
+    btn.setAttribute("title", code ? base + " (" + label + ")" : base);
+  });
+}
+
+function applyAccentVars() {
+  var accent = state.settings.accentColor || DEFAULT_SETTINGS.accentColor;
+  document.documentElement.style.setProperty("--accent", accent);
+  document.documentElement.style.setProperty("--accent-dim", hexToCssRgba(accent, 0.15));
+}
+
+function hexToCssRgba(hex, alpha) {
+  var raw = (hex || "").replace("#", "");
+  if (raw.length === 3) raw = raw.split("").map(function (ch) { return ch + ch; }).join("");
+  var num = parseInt(raw, 16);
+  if (!Number.isFinite(num)) return "rgba(16, 185, 129, " + alpha + ")";
+  return "rgba(" + ((num >> 16) & 255) + ", " + ((num >> 8) & 255) + ", " + (num & 255) + ", " + alpha + ")";
+}
+
+function applySettingsToUI() {
+  var s = state.settings;
+  syncKeyMap();
+  applyAccentVars();
+  var accentInput = document.getElementById("accentColor");
+  var canvasInput = document.getElementById("canvasColor");
+  var gridInput = document.getElementById("gridColor");
+  var patternInput = document.getElementById("bgPattern");
+  if (accentInput) accentInput.value = s.accentColor;
+  if (canvasInput) canvasInput.value = s.canvasColor;
+  if (gridInput) gridInput.value = s.gridColor;
+  if (patternInput) patternInput.value = s.bgPattern;
+  updateShortcutLabels();
+  updateKeybindList();
+}
 
 // ── Resize canvas ──
 export function resizeCanvas() {
@@ -876,6 +977,138 @@ function setupBottombar() {
   document.getElementById("locateBtn").addEventListener("click", locateObjects);
 }
 
+function updateKeybindList() {
+  var list = document.getElementById("keybindList");
+  if (!list) return;
+  list.innerHTML = "";
+  TOOL_META.forEach(function (meta) {
+    var row = document.createElement("div");
+    row.className = "keybind-row";
+    var name = document.createElement("span");
+    name.className = "keybind-name";
+    name.textContent = meta.label;
+    var btn = document.createElement("button");
+    btn.className = "keybind-btn";
+    btn.type = "button";
+    btn.dataset.tool = meta.tool;
+    btn.textContent = codeToLabel(getToolKeyCode(meta.tool));
+    btn.title = "Click, then press a key";
+    row.appendChild(name);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+
+function setToolShortcut(tool, code) {
+  var map = state.settings.keyMap;
+  Object.keys(map).forEach(function (existingCode) {
+    if (map[existingCode] === tool || existingCode === code) delete map[existingCode];
+  });
+  if (code) map[code] = tool;
+  syncKeyMap();
+  updateShortcutLabels();
+  updateKeybindList();
+  saveToStorage();
+}
+
+function resetSettings() {
+  state.settings.accentColor = DEFAULT_SETTINGS.accentColor;
+  state.settings.canvasColor = DEFAULT_SETTINGS.canvasColor;
+  state.settings.gridColor = DEFAULT_SETTINGS.gridColor;
+  state.settings.bgPattern = DEFAULT_SETTINGS.bgPattern;
+  state.settings.keyMap = Object.assign({}, DEFAULT_SETTINGS.keyMap);
+  applySettingsToUI();
+  requestRender();
+  saveToStorage();
+  showToast("Options reset");
+}
+
+function setupOptions() {
+  var panel = document.getElementById("optionsPanel");
+  var optionsBtn = document.getElementById("optionsBtn");
+  var closeBtn = document.getElementById("optionsClose");
+  var captureTool = null;
+
+  function clearCapture() {
+    captureTool = null;
+    document.querySelectorAll(".keybind-btn").forEach(function (btn) {
+      btn.classList.remove("capturing");
+      btn.textContent = codeToLabel(getToolKeyCode(btn.dataset.tool));
+    });
+  }
+
+  optionsBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    panel.classList.toggle("open");
+    clearCapture();
+  });
+  closeBtn.addEventListener("click", function () {
+    panel.classList.remove("open");
+    clearCapture();
+  });
+  panel.addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+  });
+  panel.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var btn = e.target.closest(".keybind-btn");
+    if (!btn) return;
+    clearCapture();
+    captureTool = btn.dataset.tool;
+    btn.classList.add("capturing");
+    btn.textContent = "Press key";
+  });
+  window.addEventListener("pointerdown", function () {
+    if (panel.classList.contains("open")) clearCapture();
+  });
+  window.addEventListener("keydown", function (e) {
+    if (!captureTool) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var tool = captureTool;
+    if (e.key === "Escape") {
+      clearCapture();
+      return;
+    }
+    if (e.key === "Backspace" || e.key === "Delete") {
+      setToolShortcut(tool, "");
+      clearCapture();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey || e.code === "Space") {
+      showToast("Choose a single letter, number, or symbol key");
+      clearCapture();
+      return;
+    }
+    setToolShortcut(tool, e.code);
+    clearCapture();
+  }, true);
+
+  document.getElementById("accentColor").addEventListener("input", function (e) {
+    state.settings.accentColor = e.target.value;
+    applyAccentVars();
+    requestRender();
+  });
+  document.getElementById("accentColor").addEventListener("change", saveToStorage);
+  document.getElementById("canvasColor").addEventListener("input", function (e) {
+    state.settings.canvasColor = e.target.value;
+    requestRender();
+  });
+  document.getElementById("canvasColor").addEventListener("change", saveToStorage);
+  document.getElementById("gridColor").addEventListener("input", function (e) {
+    state.settings.gridColor = e.target.value;
+    requestRender();
+  });
+  document.getElementById("gridColor").addEventListener("change", saveToStorage);
+  document.getElementById("bgPattern").addEventListener("change", function (e) {
+    state.settings.bgPattern = e.target.value;
+    requestRender();
+    saveToStorage();
+  });
+  document.getElementById("resetOptions").addEventListener("click", resetSettings);
+  updateKeybindList();
+}
+
 // ── Pointer events ──
 function setupPointerEvents() {
   var s = state;
@@ -1200,9 +1433,35 @@ export function saveToStorage() {
         objects: objects,
         nid: state.nid,
         cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
+        settings: state.settings,
       }),
     );
   } catch (e) {}
+}
+
+function mergeSettings(saved) {
+  var next = {
+    accentColor: DEFAULT_SETTINGS.accentColor,
+    canvasColor: DEFAULT_SETTINGS.canvasColor,
+    gridColor: DEFAULT_SETTINGS.gridColor,
+    bgPattern: DEFAULT_SETTINGS.bgPattern,
+    keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
+  };
+  if (saved && typeof saved === "object") {
+    ["accentColor", "canvasColor", "gridColor"].forEach(function (key) {
+      if (typeof saved[key] === "string" && /^#[0-9a-fA-F]{6}$/.test(saved[key])) next[key] = saved[key];
+    });
+    if (["dots", "grid", "none"].indexOf(saved.bgPattern) >= 0) next.bgPattern = saved.bgPattern;
+    if (saved.keyMap && typeof saved.keyMap === "object") {
+      next.keyMap = {};
+      Object.keys(saved.keyMap).forEach(function (code) {
+        var tool = saved.keyMap[code];
+        if (TOOL_META.some(function (meta) { return meta.tool === tool; })) next.keyMap[code] = tool;
+      });
+    }
+  }
+  state.settings = next;
+  syncKeyMap();
 }
 
 export function loadFromStorage() {
@@ -1221,6 +1480,8 @@ export function loadFromStorage() {
         cam.y = data.cam.y;
         cam.zoom = data.cam.zoom;
       }
+      mergeSettings(data.settings);
+      applySettingsToUI();
       return true;
     }
   } catch (e) {}
@@ -1234,10 +1495,12 @@ export function initUI() {
   setupToolbar();
   setupTopbar();
   setupBottombar();
+  setupOptions();
   buildPopupSwatches();
   setupPopupHandlers();
   setupPointerEvents();
   setupKeyboard();
+  applySettingsToUI();
   updateCursor();
   updateZoomDisplay();
 

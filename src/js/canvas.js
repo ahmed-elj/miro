@@ -6,7 +6,7 @@ import {
   cam, ctx, dpr, canvas, objects, imgCache, state,
 } from './state.js';
 import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
-import { s2w, roundedRect, wrapLine, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
+import { s2w, roundedRect, wrapLine, hexToRgba, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
 import { getSpans } from './editor.js';
 import { getBounds, getGroupBounds, getRotatedBounds, getArrowTangentVector } from './objects.js';
 
@@ -25,14 +25,17 @@ function render() {
   var s = state;
   var w = canvas.width / dpr, h = canvas.height / dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#1a1a1f';
+  ctx.fillStyle = s.settings.canvasColor;
   ctx.fillRect(0, 0, w, h);
   ctx.save();
   ctx.translate(cam.x, cam.y);
   ctx.scale(cam.zoom, cam.zoom);
   drawGrid(w, h);
   for (var i = 0; i < objects.length; i++) {
-    if (s.isEditing && objects[i].id === s.editId) continue;
+    if (s.isEditing && objects[i].id === s.editId) {
+      if (objects[i].type === 'sticky') drawStickyShell(ctx, objects[i]);
+      continue;
+    }
     drawObject(ctx, objects[i]);
   }
   if (s.isDrawing) drawPreview(ctx);
@@ -60,8 +63,18 @@ function drawGrid(sw, sh) {
   var gs = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
   var tl = s2w(0, 0), br = s2w(sw, sh);
   var sx = Math.floor(tl.x / gs) * gs, sy = Math.floor(tl.y / gs) * gs;
-  ctx.fillStyle = '#28282f';
+  if (state.settings.bgPattern === 'none') return;
+  ctx.fillStyle = state.settings.gridColor;
+  ctx.strokeStyle = state.settings.gridColor;
   var dr = 1 / cam.zoom;
+  if (state.settings.bgPattern === 'grid') {
+    ctx.lineWidth = 1 / cam.zoom;
+    ctx.beginPath();
+    for (var gx = sx; gx <= br.x; gx += gs) { ctx.moveTo(gx, tl.y); ctx.lineTo(gx, br.y); }
+    for (var gy = sy; gy <= br.y; gy += gs) { ctx.moveTo(tl.x, gy); ctx.lineTo(br.x, gy); }
+    ctx.stroke();
+    return;
+  }
   for (var x = sx; x <= br.x; x += gs)
     for (var y = sy; y <= br.y; y += gs) {
       ctx.beginPath();
@@ -73,6 +86,10 @@ function drawGrid(sw, sh) {
 export function drawObject(c, obj) {
   c.save();
   c.globalAlpha = obj.opacity != null ? obj.opacity : 1;
+  c.shadowColor = 'transparent';
+  c.shadowBlur = 0;
+  c.shadowOffsetX = 0;
+  c.shadowOffsetY = 0;
   c.lineCap = 'round';
   c.lineJoin = 'round';
   // Apply rotation around bounding box center
@@ -183,7 +200,8 @@ function drawEllipse(c, o) {
 function drawText(c, o) {
   var spans = getSpans(o), rS = Math.max(1, o.fontSize), sc = o.fontSize / rS;
   var baseW = o.fontWeight || 400;
-  c.save(); c.translate(o.x, o.y); c.scale(sc, sc); c.textBaseline = 'middle';
+  var scaleX = o.scaleX || 1, scaleY = o.scaleY || 1;
+  c.save(); c.translate(o.x, o.y); c.scale(sc * scaleX, sc * scaleY); c.textBaseline = 'middle';
   var lines = [[]];
   spans.forEach(function(s) {
     var pts = s.text.split('\n');
@@ -232,13 +250,22 @@ function drawText(c, o) {
 }
 
 function drawSticky(c, o) {
+  drawStickyShell(c, o);
+  drawStickyText(c, o);
+}
+
+function drawStickyShell(c, o) {
   var r = Math.min(o.w, o.h) * 0.05;
-  c.save();
-  c.shadowColor = 'rgba(0,0,0,0.18)'; c.shadowBlur = o.h * 0.04; c.shadowOffsetX = 0; c.shadowOffsetY = o.h * 0.02;
-  roundedRect(c, o.x, o.y, o.w, o.h, r); c.fillStyle = o.bgColor; c.fill();
-  c.restore();
+  c.shadowColor = 'transparent';
+  c.shadowBlur = 0;
+  c.shadowOffsetX = 0;
+  c.shadowOffsetY = 0;
   roundedRect(c, o.x, o.y, o.w, o.h, r);
-  c.strokeStyle = 'rgba(0,0,0,0.06)'; c.lineWidth = Math.max(0.5, o.h * 0.003); c.stroke();
+  c.fillStyle = o.bgColor;
+  c.fill();
+}
+
+function drawStickyText(c, o) {
   var minR = 14, rS = Math.max(minR, o.fontSize), sc = o.fontSize / rS;
   var pad = Math.min(o.w, o.h) * 0.08;
   c.save(); c.translate(o.x + pad, o.y + pad); c.scale(sc, sc);
@@ -312,6 +339,7 @@ function drawPreview(c) {
 
 function drawHandles(c) {
   var s = state;
+  var accent = s.settings.accentColor;
   var obj = null;
   for (var i = 0; i < objects.length; i++) {
     if (objects[i].id === s.selectedId) { obj = objects[i]; break; }
@@ -332,7 +360,7 @@ function drawHandles(c) {
   if (obj.type === 'arrow') {
     var bend = getArrowBendHandle(obj);
     var cp = getArrowControlPoint(obj);
-    c.strokeStyle = '#10b981';
+    c.strokeStyle = accent;
     c.lineWidth = 1.25 * iz;
     c.setLineDash([4 * iz, 3 * iz]);
     c.beginPath();
@@ -342,7 +370,7 @@ function drawHandles(c) {
     c.setLineDash([]);
     c.beginPath();
     c.arc(bend.x, bend.y, HANDLE_SIZE * 1.15 * iz, 0, Math.PI * 2);
-    c.fillStyle = '#10b981';
+    c.fillStyle = accent;
     c.fill();
     c.strokeStyle = '#141417';
     c.lineWidth = 1.5 * iz;
@@ -355,33 +383,34 @@ function drawHandles(c) {
       c.arc(p.x, p.y, HANDLE_SIZE * 0.9 * iz, 0, Math.PI * 2);
       c.fillStyle = '#141417';
       c.fill();
-      c.strokeStyle = '#10b981';
+      c.strokeStyle = accent;
       c.lineWidth = 2 * iz;
       c.stroke();
     });
     c.restore();
     return;
   }
-  c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
+  c.strokeStyle = accent; c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
   [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x, y: b.y + b.h }, { x: b.x + b.w, y: b.y + b.h }].forEach(function(p) {
-    c.fillStyle = '#10b981'; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
     c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
   // Rotation gizmo: line from top-center to rotation handle circle
   var tcx = b.x + b.w / 2, tcy = b.y;
   var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;
-  c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
+  c.strokeStyle = accent; c.lineWidth = 1.5 * iz;
   c.beginPath(); c.moveTo(tcx, tcy); c.lineTo(rhx, rhy); c.stroke();
   c.beginPath(); c.arc(rhx, rhy, ROTATE_HANDLE_RADIUS * iz, 0, Math.PI * 2);
-  c.fillStyle = '#10b981'; c.fill();
+  c.fillStyle = accent; c.fill();
   c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.stroke();
   c.restore();
 }
 
 function drawLocateHighlights(c) {
   var s = state;
+  var accent = s.settings.accentColor;
   var remaining = s.locateEnd - performance.now();
   if (remaining <= 0) { s.locateEnd = 0; return; }
   // Fade out over last 800ms; pulse via sin wave
@@ -391,7 +420,7 @@ function drawLocateHighlights(c) {
   var iz = 1 / cam.zoom;
   var pad = 6 * iz;
   c.save();
-  c.strokeStyle = 'rgba(16, 185, 129, ' + alpha.toFixed(3) + ')';
+  c.strokeStyle = hexToRgba(accent, alpha.toFixed(3));
   c.lineWidth = 2.5 * iz;
   c.setLineDash([8 * iz, 4 * iz]);
   c.lineDashOffset = -performance.now() * 0.03;
@@ -418,6 +447,7 @@ function drawLocateHighlights(c) {
 
 function drawMarquee(c) {
   var s = state;
+  var accent = s.settings.accentColor;
   if (!s.boxSelStart || !s.boxSelEnd) return;
   var x1 = s.boxSelStart.x, y1 = s.boxSelStart.y;
   var x2 = s.boxSelEnd.x, y2 = s.boxSelEnd.y;
@@ -425,9 +455,9 @@ function drawMarquee(c) {
   var w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
   c.save();
   var iz = 1 / cam.zoom;
-  c.fillStyle = 'rgba(16, 185, 129, 0.08)';
+  c.fillStyle = hexToRgba(accent, 0.08);
   c.fillRect(x, y, w, h);
-  c.strokeStyle = '#10b981';
+  c.strokeStyle = accent;
   c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]);
   c.strokeRect(x, y, w, h);
@@ -437,6 +467,7 @@ function drawMarquee(c) {
 
 function drawGroupEditFrame(c) {
   var s = state;
+  var accent = s.settings.accentColor;
   var bounds = [];
   for (var i = 0; i < objects.length; i++) {
     if (objects[i].groupId !== s.groupEditId) continue;
@@ -461,10 +492,10 @@ function drawGroupEditFrame(c) {
 
   c.save();
   roundedRect(c, x, y, w, h, r);
-  c.fillStyle = 'rgba(16, 185, 129, 0.04)';
+  c.fillStyle = hexToRgba(accent, 0.04);
   c.fill();
   roundedRect(c, x, y, w, h, r);
-  c.strokeStyle = 'rgba(16, 185, 129, 0.9)';
+  c.strokeStyle = hexToRgba(accent, 0.9);
   c.lineWidth = 2.5 * iz;
   c.setLineDash([10 * iz, 6 * iz]);
   c.stroke();
@@ -474,6 +505,7 @@ function drawGroupEditFrame(c) {
 
 function drawGroupHandles(c) {
   var s = state;
+  var accent = s.settings.accentColor;
   var gb = s.dragMode === 'rotate-multi' && s.dragGroupBounds
     ? s.dragGroupBounds
     : getGroupBounds(s.selectedIds);
@@ -481,7 +513,7 @@ function drawGroupHandles(c) {
   c.save();
   var iz = 1 / cam.zoom;
   // Draw individual dashed outlines for each selected object
-  c.strokeStyle = '#10b981';
+  c.strokeStyle = accent;
   c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]);
   for (var i = 0; i < objects.length; i++) {
@@ -499,7 +531,7 @@ function drawGroupHandles(c) {
         c.setLineDash([]);
         c.beginPath();
         c.arc(bend.x, bend.y, HANDLE_SIZE * 0.85 * iz, 0, Math.PI * 2);
-        c.fillStyle = '#10b981';
+        c.fillStyle = accent;
         c.fill();
         c.setLineDash([6 * iz, 4 * iz]);
       }
@@ -527,23 +559,23 @@ function drawGroupHandles(c) {
     c.rotate(groupRot);
     c.translate(-gcx, -gcy);
   }
-  c.strokeStyle = '#10b981';
+  c.strokeStyle = accent;
   c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]);
   c.strokeRect(gb.x, gb.y, gb.w, gb.h);
   c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
   [{ x: gb.x, y: gb.y }, { x: gb.x + gb.w, y: gb.y }, { x: gb.x, y: gb.y + gb.h }, { x: gb.x + gb.w, y: gb.y + gb.h }].forEach(function(p) {
-    c.fillStyle = '#10b981'; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
     c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
   // Rotation gizmo: line from top-center to rotation handle circle
   var tcx = gb.x + gb.w / 2, tcy = gb.y;
   var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;
-  c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
+  c.strokeStyle = accent; c.lineWidth = 1.5 * iz;
   c.beginPath(); c.moveTo(tcx, tcy); c.lineTo(rhx, rhy); c.stroke();
   c.beginPath(); c.arc(rhx, rhy, ROTATE_HANDLE_RADIUS * iz, 0, Math.PI * 2);
-  c.fillStyle = '#10b981'; c.fill();
+  c.fillStyle = accent; c.fill();
   c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.stroke();
   c.restore();
 }

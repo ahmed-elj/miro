@@ -4,7 +4,7 @@
  * ES module import reassignment restrictions.
  */
 
-import { MAX_UNDO } from './constants.js';
+import { DEFAULT_SETTINGS, MAX_UNDO } from './constants.js';
 
 // ── Canvas ──
 export const canvas = document.getElementById('board');
@@ -72,6 +72,14 @@ export const state = {
   nid: 1,
 
   locateEnd: 0,
+
+  settings: {
+    accentColor: DEFAULT_SETTINGS.accentColor,
+    canvasColor: DEFAULT_SETTINGS.canvasColor,
+    gridColor: DEFAULT_SETTINGS.gridColor,
+    bgPattern: DEFAULT_SETTINGS.bgPattern,
+    keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
+  },
 };
 
 export function gid() { return state.nid++; }

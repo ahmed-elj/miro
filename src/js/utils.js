@@ -123,6 +123,18 @@ export function rgbToHex(c) {
   }).join('');
 }
 
+export function hexToRgba(hex, alpha) {
+  if (!hex || !hex.startsWith('#')) return 'rgba(16, 185, 129, ' + alpha + ')';
+  var raw = hex.slice(1);
+  if (raw.length === 3) raw = raw.split('').map(function(ch) { return ch + ch; }).join('');
+  var num = parseInt(raw, 16);
+  if (!Number.isFinite(num)) return 'rgba(16, 185, 129, ' + alpha + ')';
+  var r = (num >> 16) & 255;
+  var g = (num >> 8) & 255;
+  var b = num & 255;
+  return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+}
+
 export function showToast(msg) {
   var container = document.getElementById('toasts');
   var el = document.createElement('div');
