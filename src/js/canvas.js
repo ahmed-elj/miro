@@ -118,7 +118,15 @@ export function drawObject(c, obj) {
 
 function drawPath(c, o) {
   if (o.points.length < 2) return;
+  if (o.fill && o.points.length >= 3) {
+    fillShape(c, o, function() { tracePathShape(c, o, true); });
+  }
   c.strokeStyle = o.color; c.lineWidth = o.strokeWidth;
+  tracePathShape(c, o, false);
+  c.stroke();
+}
+
+function tracePathShape(c, o, closePath) {
   c.beginPath(); c.moveTo(o.points[0].x, o.points[0].y);
   if (o.points.length === 2) { c.lineTo(o.points[1].x, o.points[1].y); }
   else {
@@ -128,7 +136,7 @@ function drawPath(c, o) {
     }
     c.lineTo(o.points[o.points.length - 1].x, o.points[o.points.length - 1].y);
   }
-  c.stroke();
+  if (closePath) c.closePath();
 }
 
 function drawLine(c, o) {
@@ -204,36 +212,56 @@ function drawEllipse(c, o) {
 function fillShape(c, o, pathFn) {
   var color = o.fillColor || o.color || '#e4e4e8';
   var style = o.fillStyle || 'solid';
+  var b = getBounds(o) || { x: o.x, y: o.y, w: o.w, h: o.h };
+  if (!b) return;
+  var alpha = o.fillOpacity != null ? o.fillOpacity : 0.28;
   c.save();
   c.beginPath();
   pathFn();
   c.clip();
-  c.fillStyle = hexToRgba(color, style === 'solid' ? 0.28 : 0.2);
-  c.fillRect(o.x, o.y, o.w, o.h);
-  if (style === 'grain') drawFillGrain(c, o, color);
-  else if (style === 'sketch') drawFillSketch(c, o, color, false);
-  else if (style === 'crosshatch') drawFillSketch(c, o, color, true);
+  c.fillStyle = hexToRgba(color, style === 'crosshatch' ? alpha * 0.28 : alpha);
+  c.fillRect(b.x, b.y, b.w, b.h);
+  if (style === 'grain') drawFillGrain(c, b, color, alpha, o.id, o.grainIntensity != null ? o.grainIntensity : 0.6);
+  else if (style === 'crosshatch') drawFillHatch(c, b, color, alpha, true);
   c.restore();
 }
 
-function drawFillGrain(c, o, color) {
-  var area = Math.abs(o.w * o.h);
-  var count = Math.min(260, Math.max(24, Math.floor(area / 180)));
-  c.fillStyle = hexToRgba(color, 0.32);
+function drawFillGrain(c, o, color, alpha, id, intensity) {
+  if (intensity <= 0) return;
+  var scale = Math.min(2, Math.max(1, cam.zoom));
+  var w = Math.max(1, Math.ceil(Math.abs(o.w) * scale));
+  var h = Math.max(1, Math.ceil(Math.abs(o.h) * scale));
+  var tex = document.createElement('canvas');
+  tex.width = w;
+  tex.height = h;
+  var tc = tex.getContext('2d');
+  var count = Math.floor(Math.min(9000, Math.max(500, (w * h) / 3)) * intensity);
+  var dotAlpha = Math.min(0.5, alpha * (0.35 + intensity * 0.5));
   for (var i = 0; i < count; i++) {
-    var seed = Math.sin((o.id || 1) * 101 + i * 97) * 10000;
+    var seed = Math.sin((id || 1) * 101 + i * 97) * 10000;
     var rx = seed - Math.floor(seed);
-    seed = Math.sin((o.id || 1) * 211 + i * 131) * 10000;
+    seed = Math.sin((id || 1) * 211 + i * 131) * 10000;
     var ry = seed - Math.floor(seed);
-    var r = Math.max(0.6, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.006);
-    c.beginPath();
-    c.arc(o.x + rx * o.w, o.y + ry * o.h, r, 0, Math.PI * 2);
-    c.fill();
+    var light = seededUnit((id || 1) * 307 + i * 149) > 0.45;
+    tc.fillStyle = light ? hexToRgba('#ffffff', dotAlpha) : hexToRgba('#000000', dotAlpha * 0.75);
+    var s = 1 + Math.floor(intensity * 1.5);
+    tc.fillRect(rx * w, ry * h, s, s);
   }
+  c.save();
+  c.globalCompositeOperation = 'overlay';
+  c.filter = 'blur(' + Math.max(0.25, intensity * 0.8).toFixed(2) + 'px)';
+  c.globalAlpha = Math.min(0.9, 0.35 + intensity * 0.55);
+  c.drawImage(tex, o.x, o.y, o.w, o.h);
+  c.restore();
 }
 
-function drawFillSketch(c, o, color, cross) {
-  c.strokeStyle = hexToRgba(color, 0.36);
+function seededUnit(seed) {
+  var x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+function drawFillHatch(c, o, color, alpha, cross) {
+  c.strokeStyle = hexToRgba(color, Math.min(1, alpha * 1.3));
   c.lineWidth = Math.max(0.8 / cam.zoom, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.006);
   var step = Math.max(8 / cam.zoom, Math.min(Math.abs(o.w), Math.abs(o.h)) * 0.12);
   drawHatchLines(c, o, step, 1);
@@ -254,6 +282,10 @@ function drawText(c, o) {
   var spans = getSpans(o), rS = Math.max(1, o.fontSize), sc = o.fontSize / rS;
   var baseW = o.fontWeight || 400;
   var scaleX = o.scaleX || 1, scaleY = o.scaleY || 1;
+  if (o.fill) {
+    var b = getBounds(o);
+    if (b) fillShape(c, o, function() { c.rect(b.x, b.y, b.w, b.h); });
+  }
   c.save(); c.translate(o.x, o.y); c.scale(sc * scaleX, sc * scaleY); c.textBaseline = 'middle';
   var lines = [[]];
   spans.forEach(function(s) {
@@ -313,6 +345,10 @@ function drawStickyShell(c, o) {
   c.shadowBlur = 0;
   c.shadowOffsetX = 0;
   c.shadowOffsetY = 0;
+  if (o.fill) {
+    fillShape(c, o, function() { roundedRect(c, o.x, o.y, o.w, o.h, r); });
+    return;
+  }
   roundedRect(c, o.x, o.y, o.w, o.h, r);
   c.fillStyle = o.bgColor;
   c.fill();
@@ -341,6 +377,7 @@ function drawImageObj(c, o) {
     return;
   }
   c.drawImage(img, o.x, o.y, o.w, o.h);
+  if (o.fill) fillShape(c, o, function() { c.rect(o.x, o.y, o.w, o.h); });
 }
 
 function drawPreview(c) {

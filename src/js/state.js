@@ -73,6 +73,8 @@ export const state = {
 
   locateEnd: 0,
 
+  viewBookmarks: [],
+
   settings: {
     accentColor: DEFAULT_SETTINGS.accentColor,
     canvasColor: DEFAULT_SETTINGS.canvasColor,

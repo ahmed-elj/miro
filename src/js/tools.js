@@ -933,8 +933,8 @@ export function finishShape() {
   var sw = s.curStroke / cam.zoom;
   if (s.curTool === 'line') addObj({ type: 'line', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
   else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, bend: s.arrowPreviewBend || 0, arrowHeads: 'end', arrowHeadSize: Math.max(s.curStroke * 5, 18) / cam.zoom, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
-  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', opacity: 1, rotation: 0 });
-  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', opacity: 1, rotation: 0 });
+  else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', fillOpacity: 0.28, opacity: 1, rotation: 0 });
+  else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor, fillStyle: 'solid', fillOpacity: 0.28, opacity: 1, rotation: 0 });
   s.drawSt = null;
   s.drawCur = null;
   s.arrowPreviewBend = 0;
