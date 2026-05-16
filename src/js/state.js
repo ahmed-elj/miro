@@ -31,6 +31,9 @@ export const state = {
   dragRotStart: null, // angle at start of rotation drag (radians)
   dragRotSnaps: null, // map of id → { rotation, cx, cy } snapshot for rotation
   dragGroupBounds: null, // snapshot of group bounds at drag start
+  groupRotation: 0, // visual rotation of current multi-select group handles
+  dragGroupRotation: 0, // groupRotation snapshot at start of group rotation
+  dragRotPointerOffset: 0, // pointer angle offset from group rotate handle
   curTool: 'select',
   curColor: '#e4e4e8',
   curStroke: 2,

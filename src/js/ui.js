@@ -880,6 +880,8 @@ function onPointerDown(e) {
   s.dragRotStart = null;
   s.dragRotSnaps = null;
   s.dragGroupBounds = null;
+  s.dragGroupRotation = 0;
+  s.dragRotPointerOffset = 0;
   var r = canvas.getBoundingClientRect(),
     sx = e.clientX - r.left,
     sy = e.clientY - r.top;
@@ -996,6 +998,8 @@ function onPointerUp(e) {
     s.dragRotStart = null;
     s.dragRotSnaps = null;
     s.dragGroupBounds = null;
+    s.dragGroupRotation = 0;
+    s.dragRotPointerOffset = 0;
   }
 }
 

@@ -436,7 +436,9 @@ function drawMarquee(c) {
 
 function drawGroupHandles(c) {
   var s = state;
-  var gb = getGroupBounds(s.selectedIds);
+  var gb = s.dragMode === 'rotate-multi' && s.dragGroupBounds
+    ? s.dragGroupBounds
+    : getGroupBounds(s.selectedIds);
   if (!gb) return;
   c.save();
   var iz = 1 / cam.zoom;
@@ -447,6 +449,25 @@ function drawGroupHandles(c) {
   for (var i = 0; i < objects.length; i++) {
     var obj = objects[i];
     if (s.selectedIds.indexOf(obj.id) < 0) continue;
+    if (obj.type === 'arrow') {
+      var bend = getArrowBendHandle(obj);
+      var cp = getArrowControlPoint(obj);
+      c.save();
+      c.beginPath();
+      c.moveTo(obj.x1, obj.y1);
+      c.quadraticCurveTo(cp.x, cp.y, obj.x2, obj.y2);
+      c.stroke();
+      if (bend) {
+        c.setLineDash([]);
+        c.beginPath();
+        c.arc(bend.x, bend.y, HANDLE_SIZE * 0.85 * iz, 0, Math.PI * 2);
+        c.fillStyle = '#10b981';
+        c.fill();
+        c.setLineDash([6 * iz, 4 * iz]);
+      }
+      c.restore();
+      continue;
+    }
     var b = getBounds(obj);
     if (b) {
       c.save();
@@ -461,6 +482,13 @@ function drawGroupHandles(c) {
   }
   c.setLineDash([]);
   // Draw unified group bounding box with solid line and corner handles
+  var groupRot = s.groupRotation || 0;
+  var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
+  if (groupRot) {
+    c.translate(gcx, gcy);
+    c.rotate(groupRot);
+    c.translate(-gcx, -gcy);
+  }
   c.strokeStyle = '#10b981';
   c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]);

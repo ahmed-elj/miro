@@ -330,7 +330,13 @@ export function hitRotateHandle(obj, wx, wy) {
 export function hitRotateHandleBounds(b, wx, wy) {
   if (!b) return false;
   var iz = 1 / cam.zoom;
-  var rhx = b.x + b.w / 2;
+  var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (b.rotation) {
+    var p = inverseRotatePoint(wx, wy, cx, cy, b.rotation);
+    wx = p.x;
+    wy = p.y;
+  }
+  var rhx = cx;
   var rhy = b.y - ROTATE_HANDLE_DIST * iz;
   var hr = Math.max(ROTATE_HANDLE_RADIUS * iz, HANDLE_HIT / cam.zoom / 2);
   var dx = wx - rhx, dy = wy - rhy;

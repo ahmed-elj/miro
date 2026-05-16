@@ -3,7 +3,7 @@
  */
 
 import { cam, objects, imgCache, state, gid } from './state.js';
-import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT } from './constants.js';
+import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT, ROTATE_HANDLE_DIST } from './constants.js';
 import { s2w, w2s, showToast, getArrowBendHandle } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
 import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
@@ -48,17 +48,24 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   // Check rotation handle first (it sits above resize handles)
   if (s.selectedIds.length > 1) {
     var gb = getGroupBounds(s.selectedIds);
+    if (gb) gb.rotation = s.groupRotation || 0;
     if (gb && hitRotateHandleBounds(gb, wp.x, wp.y)) {
+      var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
+      var handleLocalX = gb.x + gb.w / 2;
+      var handleLocalY = gb.y - ROTATE_HANDLE_DIST / cam.zoom;
+      var handleWorld = rotateAroundPoint(handleLocalX, handleLocalY, gcx, gcy, s.groupRotation || 0);
       s.dragMode = 'rotate-multi';
       s.dragSW = wp;
       s.dragUndo = false;
       s.dragGroupBounds = { x: gb.x, y: gb.y, w: gb.w, h: gb.h };
-      s.dragRotStart = Math.atan2(wp.y - (gb.y + gb.h / 2), wp.x - (gb.x + gb.w / 2));
+      s.dragRotStart = Math.atan2(handleWorld.y - gcy, handleWorld.x - gcx);
+      s.dragGroupRotation = s.groupRotation || 0;
+      s.dragRotPointerOffset = Math.atan2(wp.y - gcy, wp.x - gcx) - s.dragRotStart;
       s.dragRotSnaps = {};
       s.selectedIds.forEach(function(id) {
         var o = findObj(id);
         if (o) {
-          var snap = JSON.parse(JSON.stringify(o));
+          var snap = normalizeArrowSnap(JSON.parse(JSON.stringify(o)));
           var b = getBounds(o);
           snap.cx = b ? b.x + b.w / 2 : 0;
           snap.cy = b ? b.y + b.h / 2 : 0;
@@ -69,20 +76,6 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     }
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
-    if (obj && hitArrowBendHandle(obj, wp.x, wp.y)) {
-      if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
-        var currentBend = getArrowBendHandle(obj);
-        if (currentBend) {
-          obj.cpX = currentBend.x;
-          obj.cpY = currentBend.y;
-        }
-      }
-      s.dragMode = 'bend-arrow';
-      s.dragSW = wp;
-      s.dragSnap = JSON.parse(JSON.stringify(obj));
-      s.dragUndo = false;
-      return;
-    }
     var arrowEndpoint = hitArrowEndpointHandle(obj, wp.x, wp.y);
     if (arrowEndpoint) {
       if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
@@ -93,6 +86,20 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
         }
       }
       s.dragMode = arrowEndpoint;
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(obj));
+      s.dragUndo = false;
+      return;
+    }
+    if (obj && hitArrowBendHandle(obj, wp.x, wp.y)) {
+      if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
+        var currentBend = getArrowBendHandle(obj);
+        if (currentBend) {
+          obj.cpX = currentBend.x;
+          obj.cpY = currentBend.y;
+        }
+      }
+      s.dragMode = 'bend-arrow';
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(obj));
       s.dragUndo = false;
@@ -113,6 +120,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   if (s.selectedIds.length > 1) {
     var gb = getGroupBounds(s.selectedIds);
     if (gb) {
+      gb.rotation = s.groupRotation || 0;
       var gh = hitHandleBounds(gb, wp.x, wp.y);
       if (gh) {
         s.dragMode = gh;
@@ -123,7 +131,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
         s.multiDragSnaps = {};
         s.selectedIds.forEach(function(id) {
           var o = findObj(id);
-          if (o) s.multiDragSnaps[id] = JSON.parse(JSON.stringify(o));
+          if (o) s.multiDragSnaps[id] = normalizeArrowSnap(JSON.parse(JSON.stringify(o)));
         });
         return;
       }
@@ -166,7 +174,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.multiDragSnaps = {};
       s.selectedIds.forEach(function(id) {
         var o = findObj(id);
-        if (o) s.multiDragSnaps[id] = JSON.parse(JSON.stringify(o));
+        if (o) s.multiDragSnaps[id] = normalizeArrowSnap(JSON.parse(JSON.stringify(o)));
       });
       return;
     }
@@ -308,6 +316,27 @@ function moveObjectBy(obj, snap, dx, dy) {
   }
 }
 
+function normalizeArrowSnap(snap) {
+  if (!snap || snap.type !== 'arrow') return snap;
+  if (!Number.isFinite(snap.cpX) || !Number.isFinite(snap.cpY)) {
+    var handle = getArrowBendHandle(snap);
+    if (handle) {
+      snap.cpX = handle.x;
+      snap.cpY = handle.y;
+    }
+  }
+  return snap;
+}
+
+function rotateAroundPoint(x, y, cx, cy, angle) {
+  var cos = Math.cos(angle), sin = Math.sin(angle);
+  var dx = x - cx, dy = y - cy;
+  return {
+    x: cx + dx * cos - dy * sin,
+    y: cy + dx * sin + dy * cos,
+  };
+}
+
 // ── Compute group bounds from snapshot map (for resize, includes rotation) ──
 function getGroupBoundsFromSnaps(snapsMap, ids) {
   var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
@@ -328,6 +357,12 @@ function getGroupBoundsFromSnaps(snapsMap, ids) {
 // ── Hit-test handles on an arbitrary bounding box (for group resize) ──
 export function hitHandleBounds(b, wx, wy) {
   if (!b) return null;
+  if (b.rotation) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    var p = inverseRotatePoint(wx, wy, cx, cy, b.rotation);
+    wx = p.x;
+    wy = p.y;
+  }
   var hs = HANDLE_HIT / cam.zoom;
   var cs = [
     { k: 'resize-tl', x: b.x, y: b.y },
@@ -425,12 +460,14 @@ export function handleDrag(wp) {
     if (!gb) return;
     var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
     var angle = Math.atan2(wp.y - gcy, wp.x - gcx);
-    var delta = angle - s.dragRotStart;
+    var desiredHandleAngle = angle - (s.dragRotPointerOffset || 0);
+    var delta = desiredHandleAngle - s.dragRotStart;
+    s.groupRotation = (s.dragGroupRotation || 0) + delta;
     s.selectedIds.forEach(function(id) {
       var o = findObj(id);
       var snap = s.dragRotSnaps[id];
       if (!o || !snap) return;
-      o.rotation = (snap.rotation || 0) + delta;
+      if (o.type !== 'arrow') o.rotation = (snap.rotation || 0) + delta;
       var offx = snap.cx - gcx, offy = snap.cy - gcy;
       var cos = Math.cos(delta), sin = Math.sin(delta);
       var newCx = gcx + offx * cos - offy * sin;
@@ -441,9 +478,20 @@ export function handleDrag(wp) {
           o.points = snap.points.map(function(p) { return { x: p.x + moveDx, y: p.y + moveDy }; });
           break;
         case 'line':
-        case 'arrow':
           o.x1 = snap.x1 + moveDx; o.y1 = snap.y1 + moveDy;
           o.x2 = snap.x2 + moveDx; o.y2 = snap.y2 + moveDy;
+          break;
+        case 'arrow':
+          var p1 = rotateAroundPoint(snap.x1, snap.y1, gcx, gcy, delta);
+          var p2 = rotateAroundPoint(snap.x2, snap.y2, gcx, gcy, delta);
+          o.x1 = p1.x; o.y1 = p1.y;
+          o.x2 = p2.x; o.y2 = p2.y;
+          if (Number.isFinite(snap.cpX) && Number.isFinite(snap.cpY)) {
+            var cp = rotateAroundPoint(snap.cpX, snap.cpY, gcx, gcy, delta);
+            o.cpX = cp.x;
+            o.cpY = cp.y;
+          }
+          o.rotation = 0;
           break;
         default:
           o.x = snap.x + moveDx; o.y = snap.y + moveDy;
@@ -505,8 +553,8 @@ export function handleDrag(wp) {
     obj2.x1 = snap2.x1 + dx;
     obj2.y1 = snap2.y1 + dy;
     if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
-      obj2.cpX = snap2.cpX + dx / 2;
-      obj2.cpY = snap2.cpY + dy / 2;
+      obj2.cpX = snap2.cpX;
+      obj2.cpY = snap2.cpY;
     }
     requestRender();
     return;
@@ -516,8 +564,8 @@ export function handleDrag(wp) {
     obj2.x2 = snap2.x2 + dx;
     obj2.y2 = snap2.y2 + dy;
     if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
-      obj2.cpX = snap2.cpX + dx / 2;
-      obj2.cpY = snap2.cpY + dy / 2;
+      obj2.cpX = snap2.cpX;
+      obj2.cpY = snap2.cpY;
     }
     requestRender();
     return;
