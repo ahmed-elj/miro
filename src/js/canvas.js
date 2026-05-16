@@ -6,9 +6,9 @@ import {
   cam, ctx, dpr, canvas, objects, imgCache, state,
 } from './state.js';
 import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
-import { s2w, roundedRect, wrapLine } from './utils.js';
+import { s2w, roundedRect, wrapLine, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
 import { getSpans } from './editor.js';
-import { getBounds, getGroupBounds, getRotatedBounds } from './objects.js';
+import { getBounds, getGroupBounds, getRotatedBounds, getArrowTangentVector } from './objects.js';
 
 let rafPending = false;
 export function requestRender() {
@@ -118,18 +118,53 @@ function drawLine(c, o) {
   c.beginPath(); c.moveTo(o.x1, o.y1); c.lineTo(o.x2, o.y2); c.stroke();
 }
 
-function drawArrow(c, o) {
-  c.strokeStyle = o.color; c.lineWidth = o.strokeWidth;
-  c.beginPath(); c.moveTo(o.x1, o.y1); c.lineTo(o.x2, o.y2); c.stroke();
-  var len = Math.hypot(o.x2 - o.x1, o.y2 - o.y1);
-  if (len < 1) return;
-  var hl = Math.min(len * 0.25, Math.max(o.strokeWidth * 4, len * 0.12));
-  var a = Math.atan2(o.y2 - o.y1, o.x2 - o.x1);
-  var hw = Math.max(0.3, 0.4 - (hl / len) * 0.2);
+function drawArrowHead(c, seg, headSize) {
+  if (!seg) return;
+  var dx = seg.x2 - seg.x1;
+  var dy = seg.y2 - seg.y1;
+  var len = Math.hypot(dx, dy);
+  if (len < 0.001) return;
+  var ux = dx / len;
+  var uy = dy / len;
+  var px = -uy;
+  var py = ux;
+  var hl = Math.max(0.01, Math.min(headSize || 18 / cam.zoom, len * 0.8));
+  var hw = hl * 0.36;
+  var bx = seg.x2 - ux * hl;
+  var by = seg.y2 - uy * hl;
   c.beginPath();
-  c.moveTo(o.x2, o.y2); c.lineTo(o.x2 - hl * Math.cos(a - hw), o.y2 - hl * Math.sin(a - hw));
-  c.moveTo(o.x2, o.y2); c.lineTo(o.x2 - hl * Math.cos(a + hw), o.y2 - hl * Math.sin(a + hw));
+  c.moveTo(bx + px * hw, by + py * hw);
+  c.lineTo(seg.x2, seg.y2);
+  c.lineTo(bx - px * hw, by - py * hw);
+  c.strokeStyle = seg.color || '#e4e4e8';
+  c.lineWidth = Math.max(1 / cam.zoom, (headSize || 18 / cam.zoom) * 0.12);
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
   c.stroke();
+}
+
+function drawArrow(c, o) {
+  c.strokeStyle = o.color;
+  c.lineWidth = o.strokeWidth;
+  var pts = getArrowCurvePoints(o);
+  if (!pts.length) return;
+  var cp = getArrowControlPoint(o);
+  c.beginPath();
+  c.moveTo(o.x1, o.y1);
+  c.quadraticCurveTo(cp.x, cp.y, o.x2, o.y2);
+  c.stroke();
+  var headSize = o.arrowHeadSize || Math.max((o.strokeWidth || 2) * 10, 18 / cam.zoom);
+  var headMode = getArrowHeadMode(o);
+  if (headMode === 'end' || headMode === 'both') {
+    var endSeg = getArrowTangentVector(o, true);
+    if (endSeg) endSeg.color = o.color;
+    drawArrowHead(c, endSeg, headSize);
+  }
+  if (headMode === 'start' || headMode === 'both') {
+    var startSeg = getArrowTangentVector(o, false);
+    if (startSeg) startSeg.color = o.color;
+    drawArrowHead(c, startSeg, headSize);
+  }
 }
 
 function drawRect(c, o) {
@@ -251,17 +286,17 @@ function drawPreview(c) {
   if (s.curTool === 'line') {
     c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
   } else if (s.curTool === 'arrow') {
-    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-    var len = Math.hypot(x2 - x1, y2 - y1);
-    if (len >= 1) {
-      var hl = Math.min(len * 0.25, Math.max(sw * 4, len * 0.12));
-      var a = Math.atan2(y2 - y1, x2 - x1);
-      var hw = Math.max(0.3, 0.4 - (hl / len) * 0.2);
-      c.beginPath();
-      c.moveTo(x2, y2); c.lineTo(x2 - hl * Math.cos(a - hw), y2 - hl * Math.sin(a - hw));
-      c.moveTo(x2, y2); c.lineTo(x2 - hl * Math.cos(a + hw), y2 - hl * Math.sin(a + hw));
-      c.stroke();
-    }
+    drawArrow(c, {
+      type: 'arrow',
+      x1: x1,
+      y1: y1,
+      x2: x2,
+      y2: y2,
+      bend: s.arrowPreviewBend,
+      color: s.curColor,
+      strokeWidth: sw,
+      arrowHeadSize: Math.max(s.curStroke * 5, 18) / cam.zoom,
+    });
   } else if (s.curTool === 'rect') {
     if (s.fillOn) { c.fillStyle = s.curColor + '33'; c.fillRect(x, y, w, h); }
     c.strokeRect(x, y, w, h);
@@ -292,6 +327,39 @@ function drawHandles(c) {
     c.translate(cx, cy);
     c.rotate(rot);
     c.translate(-cx, -cy);
+  }
+  if (obj.type === 'arrow') {
+    var bend = getArrowBendHandle(obj);
+    var cp = getArrowControlPoint(obj);
+    c.strokeStyle = '#10b981';
+    c.lineWidth = 1.25 * iz;
+    c.setLineDash([4 * iz, 3 * iz]);
+    c.beginPath();
+    c.moveTo(obj.x1, obj.y1);
+    c.quadraticCurveTo(cp.x, cp.y, obj.x2, obj.y2);
+    c.stroke();
+    c.setLineDash([]);
+    c.beginPath();
+    c.arc(bend.x, bend.y, HANDLE_SIZE * 1.15 * iz, 0, Math.PI * 2);
+    c.fillStyle = '#10b981';
+    c.fill();
+    c.strokeStyle = '#141417';
+    c.lineWidth = 1.5 * iz;
+    c.stroke();
+    [
+      { x: obj.x1, y: obj.y1 },
+      { x: obj.x2, y: obj.y2 },
+    ].forEach(function(p) {
+      c.beginPath();
+      c.arc(p.x, p.y, HANDLE_SIZE * 0.9 * iz, 0, Math.PI * 2);
+      c.fillStyle = '#141417';
+      c.fill();
+      c.strokeStyle = '#10b981';
+      c.lineWidth = 2 * iz;
+      c.stroke();
+    });
+    c.restore();
+    return;
   }
   c.strokeStyle = '#10b981'; c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);

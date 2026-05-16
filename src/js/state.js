@@ -40,6 +40,7 @@ export const state = {
   drawSt: null,
   drawCur: null,
   curPath: [],
+  arrowPreviewBend: 0,
 
   dragMode: null,
   dragSW: null,

@@ -13,7 +13,7 @@ import {
   ROTATE_HANDLE_DIST,
   ROTATE_HANDLE_RADIUS,
 } from "./constants.js";
-import { s2w, w2s, showToast } from "./utils.js";
+import { s2w, w2s, showToast, getArrowHeadMode } from "./utils.js";
 import { requestRender } from "./canvas.js";
 import { getBounds, getRotatedBounds, hitTest } from "./objects.js";
 import { getSpans } from "./editor.js";
@@ -118,6 +118,7 @@ function updatePopup() {
     document.getElementById("popTextRow").style.display = "flex";
     document.getElementById("popColorRow").style.display = "flex";
     document.getElementById("popStickyRow").style.display = "none";
+    document.getElementById("popArrowRow").style.display = "none";
     try {
       document
         .getElementById("popBold")
@@ -192,6 +193,7 @@ function updatePopup() {
     document.getElementById("popTextRow").style.display = "none";
     document.getElementById("popColorRow").style.display = "flex";
     document.getElementById("popStickyRow").style.display = "none";
+    document.getElementById("popArrowRow").style.display = "none";
     document.getElementById("popEditText").style.display = "none";
     document.getElementById("popStrokeBtn").style.display = "none";
     // Show opacity of primary selected object
@@ -247,8 +249,25 @@ function updatePopup() {
       : "none";
   document.getElementById("popStickyRow").style.display =
     selObj.type === "sticky" ? "flex" : "none";
+  document.getElementById("popArrowRow").style.display =
+    selObj.type === "arrow" ? "flex" : "none";
   document.getElementById("popEditText").style.display =
     selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
+  if (selObj.type === "arrow") {
+    var arrowMode = getArrowHeadMode(selObj);
+    document
+      .getElementById("popArrowStart")
+      .classList.toggle("active", arrowMode === "start");
+    document
+      .getElementById("popArrowEnd")
+      .classList.toggle("active", arrowMode === "end");
+    document
+      .getElementById("popArrowBoth")
+      .classList.toggle("active", arrowMode === "both");
+    document
+      .getElementById("popArrowNone")
+      .classList.toggle("active", arrowMode === "none");
+  }
   if (selObj.type === "text") {
     var spans = getSpans(selObj);
     document.getElementById("popBold").classList.toggle(
@@ -420,12 +439,43 @@ function setupPopupHandlers() {
       d.classList.remove("open");
     });
   }
+  function applyArrowHeadMode(mode) {
+    if (s.selectedIds.length > 1) return;
+    var o = findObj(s.selectedId);
+    if (!o || o.type !== "arrow") return;
+    if (["none", "start", "end", "both"].indexOf(mode) < 0) return;
+    saveState();
+    o.arrowHeads = mode;
+    requestRender();
+  }
+
   function toggleDropdown(btnId, dropdownId) {
     var dd = document.getElementById(dropdownId);
     var isOpen = dd.classList.contains("open");
     closeDropdowns();
     if (!isOpen) dd.classList.add("open");
   }
+
+  document
+    .getElementById("popArrowStart")
+    .addEventListener("click", function () {
+      applyArrowHeadMode("start");
+    });
+  document
+    .getElementById("popArrowEnd")
+    .addEventListener("click", function () {
+      applyArrowHeadMode("end");
+    });
+  document
+    .getElementById("popArrowBoth")
+    .addEventListener("click", function () {
+      applyArrowHeadMode("both");
+    });
+  document
+    .getElementById("popArrowNone")
+    .addEventListener("click", function () {
+      applyArrowHeadMode("none");
+    });
   document
     .getElementById("popOpacityBtn")
     .addEventListener("click", function (e) {

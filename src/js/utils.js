@@ -19,6 +19,69 @@ export function ptSegDist(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
+export function getArrowHeadMode(obj) {
+  return obj && ['none', 'start', 'end', 'both'].indexOf(obj.arrowHeads) >= 0
+    ? obj.arrowHeads
+    : 'end';
+}
+
+export function getArrowMidpoint(obj) {
+  return {
+    x: (obj.x1 + obj.x2) / 2,
+    y: (obj.y1 + obj.y2) / 2,
+  };
+}
+
+export function getArrowNormal(obj) {
+  var dx = obj.x2 - obj.x1;
+  var dy = obj.y2 - obj.y1;
+  var len = Math.hypot(dx, dy);
+  if (len < 0.001) return { x: 0, y: -1 };
+  return { x: -dy / len, y: dx / len };
+}
+
+export function getArrowControlPoint(obj) {
+  if (Number.isFinite(obj.cpX) && Number.isFinite(obj.cpY)) {
+    return {
+      x: obj.cpX * 2 - (obj.x1 + obj.x2) / 2,
+      y: obj.cpY * 2 - (obj.y1 + obj.y2) / 2,
+    };
+  }
+  var mid = getArrowMidpoint(obj);
+  var normal = getArrowNormal(obj);
+  return {
+    x: mid.x + normal.x * (obj.bend || 0),
+    y: mid.y + normal.y * (obj.bend || 0),
+  };
+}
+
+export function getArrowBendHandle(obj) {
+  if (!obj || obj.type !== 'arrow') return null;
+  if (Number.isFinite(obj.cpX) && Number.isFinite(obj.cpY)) {
+    return { x: obj.cpX, y: obj.cpY };
+  }
+  return getArrowCurvePoint(obj, 0.5);
+}
+
+export function getArrowCurvePoint(obj, t) {
+  var mt = 1 - t;
+  var cp = getArrowControlPoint(obj);
+  return {
+    x: mt * mt * obj.x1 + 2 * mt * t * cp.x + t * t * obj.x2,
+    y: mt * mt * obj.y1 + 2 * mt * t * cp.y + t * t * obj.y2,
+  };
+}
+
+export function getArrowCurvePoints(obj) {
+  var baseLen = Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1);
+  var cp = getArrowControlPoint(obj);
+  var bendLen = Math.hypot(cp.x - (obj.x1 + obj.x2) / 2, cp.y - (obj.y1 + obj.y2) / 2);
+  var steps = Math.max(16, Math.ceil((baseLen + bendLen) / 24));
+  var points = [];
+  for (var i = 0; i <= steps; i++) points.push(getArrowCurvePoint(obj, i / steps));
+  return points;
+}
+
 export function roundedRect(c, x, y, w, h, r) {
   c.beginPath();
   c.moveTo(x + r, y);

@@ -4,7 +4,7 @@
 
 import { cam, objects } from './state.js';
 import { HANDLE_HIT, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
-import { ptSegDist } from './utils.js';
+import { ptSegDist, getArrowCurvePoints, getArrowBendHandle, getArrowCurvePoint, getArrowControlPoint } from './utils.js';
 import { getSpans } from './editor.js';
 
 var textMeasureCanvas = document.createElement('canvas');
@@ -25,6 +25,29 @@ export function getBounds(obj) {
     case 'line':
     case 'arrow': {
       var p = obj.strokeWidth || 1;
+      if (obj.type === 'arrow') {
+        var pts = getArrowCurvePoints(obj);
+        var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
+        pts.forEach(function(pt) {
+          ax = Math.min(ax, pt.x);
+          ay = Math.min(ay, pt.y);
+          bx = Math.max(bx, pt.x);
+          by = Math.max(by, pt.y);
+        });
+        var bh = getArrowBendHandle(obj);
+        if (bh) {
+          ax = Math.min(ax, bh.x);
+          ay = Math.min(ay, bh.y);
+          bx = Math.max(bx, bh.x);
+          by = Math.max(by, bh.y);
+        }
+        return {
+          x: ax - p,
+          y: ay - p,
+          w: (bx - ax) + p * 2,
+          h: (by - ay) + p * 2,
+        };
+      }
       return {
         x: Math.min(obj.x1, obj.x2) - p,
         y: Math.min(obj.y1, obj.y2) - p,
@@ -148,6 +171,14 @@ function hitTestPath(o, wx, wy, pad) {
 }
 
 function hitTestLine(o, wx, wy, pad) {
+  if (o.type === 'arrow') {
+    var pts = getArrowCurvePoints(o);
+    var t = Math.max(pad, (o.strokeWidth || 1) / 2 + pad);
+    for (var i = 0; i < pts.length - 1; i++) {
+      if (ptSegDist(wx, wy, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < t) return true;
+    }
+    return false;
+  }
   return ptSegDist(wx, wy, o.x1, o.y1, o.x2, o.y2) < Math.max(pad, (o.strokeWidth || 1) / 2 + pad);
 }
 
@@ -182,6 +213,40 @@ function hitTestEllipse(o, wx, wy, pad) {
   return Math.abs(dist - 1) < t;
 }
 
+export function hitArrowBendHandle(obj, wx, wy) {
+  if (!obj || obj.type !== 'arrow' || obj.bend == null) return false;
+  var b = getBounds(obj);
+  if (!b) return false;
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    var p = inverseRotatePoint(wx, wy, cx, cy, rot);
+    wx = p.x;
+    wy = p.y;
+  }
+  var handle = getArrowBendHandle(obj);
+  if (!handle) return false;
+  var hs = HANDLE_HIT / cam.zoom;
+  return Math.abs(wx - handle.x) < hs && Math.abs(wy - handle.y) < hs;
+}
+
+export function hitArrowEndpointHandle(obj, wx, wy) {
+  if (!obj || obj.type !== 'arrow') return null;
+  var b = getBounds(obj);
+  if (!b) return null;
+  var rot = obj.rotation || 0;
+  if (rot) {
+    var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    var p = inverseRotatePoint(wx, wy, cx, cy, rot);
+    wx = p.x;
+    wy = p.y;
+  }
+  var hs = HANDLE_HIT / cam.zoom;
+  if (Math.abs(wx - obj.x1) < hs && Math.abs(wy - obj.y1) < hs) return 'arrow-start';
+  if (Math.abs(wx - obj.x2) < hs && Math.abs(wy - obj.y2) < hs) return 'arrow-end';
+  return null;
+}
+
 export function hitHandle(obj, wx, wy) {
   var b = getBounds(obj);
   if (!b) return null;
@@ -204,6 +269,15 @@ export function hitHandle(obj, wx, wy) {
     if (Math.abs(wx - cs[i].x) < hs && Math.abs(wy - cs[i].y) < hs) return cs[i].k;
   }
   return null;
+}
+
+export function getArrowTangentVector(obj, atEnd) {
+  if (!obj || obj.type !== 'arrow') return null;
+  var cp = getArrowControlPoint(obj);
+  var p1 = cp;
+  var p2 = atEnd ? { x: obj.x2, y: obj.y2 } : { x: obj.x1, y: obj.y1 };
+  if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 0.001) return null;
+  return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
 }
 
 // ── Compute the unified bounding box of a set of object IDs ──

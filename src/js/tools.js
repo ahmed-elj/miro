@@ -4,9 +4,9 @@
 
 import { cam, objects, imgCache, state, gid } from './state.js';
 import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT } from './constants.js';
-import { s2w, w2s, showToast } from './utils.js';
+import { s2w, w2s, showToast, getArrowBendHandle } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
-import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint } from './objects.js';
+import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, delSel, findObj } from './undo.js';
 
@@ -69,7 +69,36 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     }
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
-    if (obj && hitRotateHandle(obj, wp.x, wp.y)) {
+    if (obj && hitArrowBendHandle(obj, wp.x, wp.y)) {
+      if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
+        var currentBend = getArrowBendHandle(obj);
+        if (currentBend) {
+          obj.cpX = currentBend.x;
+          obj.cpY = currentBend.y;
+        }
+      }
+      s.dragMode = 'bend-arrow';
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(obj));
+      s.dragUndo = false;
+      return;
+    }
+    var arrowEndpoint = hitArrowEndpointHandle(obj, wp.x, wp.y);
+    if (arrowEndpoint) {
+      if (!Number.isFinite(obj.cpX) || !Number.isFinite(obj.cpY)) {
+        var bendHandle = getArrowBendHandle(obj);
+        if (bendHandle) {
+          obj.cpX = bendHandle.x;
+          obj.cpY = bendHandle.y;
+        }
+      }
+      s.dragMode = arrowEndpoint;
+      s.dragSW = wp;
+      s.dragSnap = JSON.parse(JSON.stringify(obj));
+      s.dragUndo = false;
+      return;
+    }
+    if (obj && obj.type !== 'arrow' && hitRotateHandle(obj, wp.x, wp.y)) {
       s.dragMode = 'rotate';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -85,7 +114,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     var gb = getGroupBounds(s.selectedIds);
     if (gb) {
       var gh = hitHandleBounds(gb, wp.x, wp.y);
-          if (gh) {
+      if (gh) {
         s.dragMode = gh;
         s.dragSW = wp;
         s.dragUndo = false;
@@ -102,7 +131,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
     if (obj) {
-      var h = hitHandle(obj, wp.x, wp.y);
+      var h = obj.type === 'arrow' ? null : hitHandle(obj, wp.x, wp.y);
       if (h) {
         s.dragMode = h;
         s.dragSW = wp;
@@ -268,14 +297,16 @@ function moveObjectBy(obj, snap, dx, dy) {
   case 'arrow':
     obj.x1 = snap.x1 + dx; obj.y1 = snap.y1 + dy;
     obj.x2 = snap.x2 + dx; obj.y2 = snap.y2 + dy;
+    if (obj.type === 'arrow' && Number.isFinite(snap.cpX) && Number.isFinite(snap.cpY)) {
+      obj.cpX = snap.cpX + dx;
+      obj.cpY = snap.cpY + dy;
+    }
     break;
   default:
     obj.x = snap.x + dx; obj.y = snap.y + dy;
     break;
   }
 }
-
-// ── Compute the unified bounding box of a set of object IDs (in objects.js) ──
 
 // ── Compute group bounds from snapshot map (for resize, includes rotation) ──
 function getGroupBoundsFromSnaps(snapsMap, ids) {
@@ -324,6 +355,14 @@ function scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy) {
     obj.y1 = anchorY + (snap.y1 - anchorY) * sy;
     obj.x2 = anchorX + (snap.x2 - anchorX) * sx;
     obj.y2 = anchorY + (snap.y2 - anchorY) * sy;
+    if (obj.type === 'arrow') {
+      if (Number.isFinite(snap.cpX) && Number.isFinite(snap.cpY)) {
+        obj.cpX = anchorX + (snap.cpX - anchorX) * sx;
+        obj.cpY = anchorY + (snap.cpY - anchorY) * sy;
+      } else {
+        obj.bend = (snap.bend || 0) * ((Math.abs(sx) + Math.abs(sy)) / 2);
+      }
+    }
     break;
   case 'text':
     // For text, x/y is the center point — scale it, and scale fontSize
@@ -391,16 +430,12 @@ export function handleDrag(wp) {
       var o = findObj(id);
       var snap = s.dragRotSnaps[id];
       if (!o || !snap) return;
-      // Update rotation from snapshot
       o.rotation = (snap.rotation || 0) + delta;
-      // Rotate position around group center using snapshot positions
-      // snap.cx/cy will be set at drag start
       var offx = snap.cx - gcx, offy = snap.cy - gcy;
       var cos = Math.cos(delta), sin = Math.sin(delta);
       var newCx = gcx + offx * cos - offy * sin;
       var newCy = gcy + offx * sin + offy * cos;
       var moveDx = newCx - snap.cx, moveDy = newCy - snap.cy;
-      // Apply movement from snapshot position
       switch (o.type) {
         case 'path':
           o.points = snap.points.map(function(p) { return { x: p.x + moveDx, y: p.y + moveDy }; });
@@ -421,9 +456,8 @@ export function handleDrag(wp) {
 
   // Multi-object group resize
   if (s.dragMode && s.dragMode.startsWith('resize-') && s.multiDragSnaps && s.selectedIds.length > 1) {
-    var gb = s.dragGroupBounds || getGroupBounds(s.selectedIds);
-    if (!gb || gb.w < 0.01 || gb.h < 0.01) return;
-    // Use the snap state to get the original group bounds
+    var gb2 = s.dragGroupBounds || getGroupBounds(s.selectedIds);
+    if (!gb2 || gb2.w < 0.01 || gb2.h < 0.01) return;
     var snapIds = Object.keys(s.multiDragSnaps).map(Number);
     var snapGb = getGroupBoundsFromSnaps(s.multiDragSnaps, snapIds);
     if (!snapGb || snapGb.w < 0.01 || snapGb.h < 0.01) return;
@@ -439,13 +473,12 @@ export function handleDrag(wp) {
     } else if (dm === 'resize-tr') {
       anchorX = snapGb.x; anchorY = snapGb.y + snapGb.h;
       newW = snapGb.w + dx; newH = snapGb.h - dy;
-    } else { // resize-tl
+    } else {
       anchorX = snapGb.x + snapGb.w; anchorY = snapGb.y + snapGb.h;
       newW = snapGb.w - dx; newH = snapGb.h - dy;
     }
-    var sx = newW / snapGb.w;
-    var sy = newH / snapGb.h;
-    sx = Math.max(0.05, sx); sy = Math.max(0.05, sy);
+    var sx = Math.max(0.05, newW / snapGb.w);
+    var sy = Math.max(0.05, newH / snapGb.h);
 
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
@@ -457,41 +490,78 @@ export function handleDrag(wp) {
     return;
   }
 
-  var obj = findObj(s.selectedId);
-  if (!obj || !s.dragSnap) return;
-  var snap = s.dragSnap;
+  var obj2 = findObj(s.selectedId);
+  if (!obj2 || !s.dragSnap) return;
+  var snap2 = s.dragSnap;
 
-  if (s.dragMode && s.dragMode.startsWith('resize-') && (snap.rotation || 0)) {
-    var rb = getBounds(snap);
+  if (s.dragMode === 'bend-arrow') {
+    obj2.cpX = snap2.cpX + dx;
+    obj2.cpY = snap2.cpY + dy;
+    requestRender();
+    return;
+  }
+
+  if (s.dragMode === 'arrow-start') {
+    obj2.x1 = snap2.x1 + dx;
+    obj2.y1 = snap2.y1 + dy;
+    if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
+      obj2.cpX = snap2.cpX + dx / 2;
+      obj2.cpY = snap2.cpY + dy / 2;
+    }
+    requestRender();
+    return;
+  }
+
+  if (s.dragMode === 'arrow-end') {
+    obj2.x2 = snap2.x2 + dx;
+    obj2.y2 = snap2.y2 + dy;
+    if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
+      obj2.cpX = snap2.cpX + dx / 2;
+      obj2.cpY = snap2.cpY + dy / 2;
+    }
+    requestRender();
+    return;
+  }
+
+  if (s.dragMode && s.dragMode.startsWith('resize-') && (snap2.rotation || 0)) {
+    var rb = getBounds(snap2);
     if (rb) {
       var rcx = rb.x + rb.w / 2, rcy = rb.y + rb.h / 2;
-      var startLocal = inverseRotatePoint(s.dragSW.x, s.dragSW.y, rcx, rcy, snap.rotation || 0);
-      var curLocal = inverseRotatePoint(wp.x, wp.y, rcx, rcy, snap.rotation || 0);
+      var startLocal = inverseRotatePoint(s.dragSW.x, s.dragSW.y, rcx, rcy, snap2.rotation || 0);
+      var curLocal = inverseRotatePoint(wp.x, wp.y, rcx, rcy, snap2.rotation || 0);
       dx = curLocal.x - startLocal.x;
       dy = curLocal.y - startLocal.y;
     }
   }
 
   if (s.dragMode === 'move') {
-    moveObjectBy(obj, snap, dx, dy);
+    moveObjectBy(obj2, snap2, dx, dy);
   } else if (s.dragMode.startsWith('resize-')) {
     var ms = 10 / cam.zoom;
-    if (obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'image') {
-      applyResize(obj, snap, dx, dy, ms);
-    } else if (obj.type === 'sticky') {
-      applyStickyResize(obj, snap, dx, dy);
-    } else if (obj.type === 'text') {
-      applyTextResize(obj, snap, dx, dy);
-    } else if (obj.type === 'line' || obj.type === 'arrow') {
+    if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image') {
+      applyResize(obj2, snap2, dx, dy, ms);
+    } else if (obj2.type === 'sticky') {
+      applyStickyResize(obj2, snap2, dx, dy);
+    } else if (obj2.type === 'text') {
+      applyTextResize(obj2, snap2, dx, dy);
+    } else if (obj2.type === 'line' || obj2.type === 'arrow') {
       if (s.dragMode === 'resize-br' || s.dragMode === 'resize-tr') {
-        if (snap.x2 >= snap.x1) { obj.x2 = snap.x2 + dx; obj.y2 = snap.y2 + dy; }
-        else { obj.x1 = snap.x1 + dx; obj.y1 = snap.y1 + dy; }
+        if (snap2.x2 >= snap2.x1) { obj2.x2 = snap2.x2 + dx; obj2.y2 = snap2.y2 + dy; }
+        else { obj2.x1 = snap2.x1 + dx; obj2.y1 = snap2.y1 + dy; }
       } else {
-        if (snap.x1 <= snap.x2) { obj.x1 = snap.x1 + dx; obj.y1 = snap.y1 + dy; }
-        else { obj.x2 = snap.x2 + dx; obj.y2 = snap.y2 + dy; }
+        if (snap2.x1 <= snap2.x2) { obj2.x1 = snap2.x1 + dx; obj2.y1 = snap2.y1 + dy; }
+        else { obj2.x2 = snap2.x2 + dx; obj2.y2 = snap2.y2 + dy; }
       }
-    } else if (obj.type === 'path') {
-      var b = getBounds(snap);
+      if (obj2.type === 'arrow') {
+        if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
+          obj2.cpX = snap2.cpX;
+          obj2.cpY = snap2.cpY;
+        } else {
+          obj2.bend = snap2.bend || 0;
+        }
+      }
+    } else if (obj2.type === 'path') {
+      var b = getBounds(snap2);
       if (!b || b.w < 0.01 || b.h < 0.01) return;
       var ox, oy, sx2, sy2;
       if (s.dragMode === 'resize-br') { ox = b.x; oy = b.y; sx2 = (b.w + dx) / b.w; sy2 = (b.h + dy) / b.h; }
@@ -499,7 +569,7 @@ export function handleDrag(wp) {
       else if (s.dragMode === 'resize-tr') { ox = b.x; oy = b.y + b.h; sx2 = (b.w + dx) / b.w; sy2 = (b.h - dy) / b.h; }
       else { ox = b.x + b.w; oy = b.y + b.h; sx2 = (b.w - dx) / b.w; sy2 = (b.h - dy) / b.h; }
       sx2 = Math.max(0.05, sx2); sy2 = Math.max(0.05, sy2);
-      obj.points = snap.points.map(function(p) { return { x: ox + (p.x - ox) * sx2, y: oy + (p.y - oy) * sy2 }; });
+      obj2.points = snap2.points.map(function(p) { return { x: ox + (p.x - ox) * sx2, y: oy + (p.y - oy) * sy2 }; });
     }
   }
   requestRender();
@@ -606,6 +676,7 @@ export function startShape(wp) {
   state.isDrawing = true;
   state.drawSt = wp;
   state.drawCur = wp;
+  state.arrowPreviewBend = 0;
 }
 
 export function finishShape() {
@@ -614,15 +685,16 @@ export function finishShape() {
   if (!s.drawSt || !s.drawCur) return;
   var x1 = s.drawSt.x, y1 = s.drawSt.y, x2 = s.drawCur.x, y2 = s.drawCur.y;
   if (Math.abs(x2 - x1) < 3 / cam.zoom && Math.abs(y2 - y1) < 3 / cam.zoom) {
-    s.drawSt = null; s.drawCur = null; return;
+    s.drawSt = null; s.drawCur = null; s.arrowPreviewBend = 0; return;
   }
   var sw = s.curStroke / cam.zoom;
   if (s.curTool === 'line') addObj({ type: 'line', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
-  else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
+  else if (s.curTool === 'arrow') addObj({ type: 'arrow', id: gid(), x1: x1, y1: y1, x2: x2, y2: y2, bend: s.arrowPreviewBend || 0, arrowHeads: 'end', arrowHeadSize: Math.max(s.curStroke * 5, 18) / cam.zoom, color: s.curColor, strokeWidth: sw, opacity: 1, rotation: 0 });
   else if (s.curTool === 'rect') addObj({ type: 'rect', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
   else if (s.curTool === 'ellipse') addObj({ type: 'ellipse', id: gid(), x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), color: s.curColor, strokeWidth: sw, fill: s.fillOn, fillColor: s.curColor + '33', opacity: 1, rotation: 0 });
   s.drawSt = null;
   s.drawCur = null;
+  s.arrowPreviewBend = 0;
 }
 
 // ── Text create ──
