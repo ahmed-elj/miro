@@ -425,6 +425,18 @@ caret-color: var(--accent);
   color: var(--accent);
 }
 
+.pbtn.pbtn-wide {
+  width: auto;
+  min-width: 78px;
+  padding: 0 9px;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.pbtn.pbtn-wide span {
+  font-weight: 600;
+}
+
 .pbtn.danger:hover {
   background: rgba(239, 68, 68, 0.15);
   color: var(--danger);

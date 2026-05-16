@@ -119,6 +119,7 @@ function updatePopup() {
     document.getElementById("popColorRow").style.display = "flex";
     document.getElementById("popStickyRow").style.display = "none";
     document.getElementById("popArrowRow").style.display = "none";
+    document.getElementById("popGroupRow").style.display = "none";
     try {
       document
         .getElementById("popBold")
@@ -194,8 +195,15 @@ function updatePopup() {
     document.getElementById("popColorRow").style.display = "flex";
     document.getElementById("popStickyRow").style.display = "none";
     document.getElementById("popArrowRow").style.display = "none";
+    document.getElementById("popGroupRow").style.display = "flex";
     document.getElementById("popEditText").style.display = "none";
     document.getElementById("popStrokeBtn").style.display = "none";
+    var hasGroupedObject = s.selectedIds.some(function (id) {
+      var groupedObj = findObj(id);
+      return groupedObj && groupedObj.groupId;
+    });
+    document.getElementById("popGroup").style.display = "flex";
+    document.getElementById("popUngroup").style.display = hasGroupedObject ? "flex" : "none";
     // Show opacity of primary selected object
     var primaryObj = findObj(s.selectedId);
     document.getElementById("popOpacity").value =
@@ -251,6 +259,9 @@ function updatePopup() {
     selObj.type === "sticky" ? "flex" : "none";
   document.getElementById("popArrowRow").style.display =
     selObj.type === "arrow" ? "flex" : "none";
+  document.getElementById("popGroupRow").style.display = selObj.groupId ? "flex" : "none";
+  document.getElementById("popGroup").style.display = "none";
+  document.getElementById("popUngroup").style.display = selObj.groupId ? "flex" : "none";
   document.getElementById("popEditText").style.display =
     selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
   if (selObj.type === "arrow") {
@@ -449,6 +460,48 @@ function setupPopupHandlers() {
     requestRender();
   }
 
+  function nextGroupId() {
+    return "grp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function getSelectedObjects() {
+    return s.selectedIds.map(function (id) {
+      return findObj(id);
+    }).filter(Boolean);
+  }
+
+  function groupSelectedObjects() {
+    var selected = getSelectedObjects();
+    if (selected.length < 2) return;
+    saveState();
+    var groupId = nextGroupId();
+    selected.forEach(function (obj) {
+      obj.groupId = groupId;
+    });
+    s.selectedIds = selected.map(function (obj) { return obj.id; });
+    s.selectedId = s.selectedIds[s.selectedIds.length - 1];
+    s._lastPopupId = null;
+    showToast("Objects grouped");
+    requestRender();
+  }
+
+  function ungroupSelectedObjects() {
+    var groupIds = [];
+    getSelectedObjects().forEach(function (obj) {
+      if (obj.groupId && groupIds.indexOf(obj.groupId) < 0) groupIds.push(obj.groupId);
+    });
+    if (!groupIds.length) return;
+    saveState();
+    objects.forEach(function (obj) {
+      if (groupIds.indexOf(obj.groupId) >= 0) delete obj.groupId;
+    });
+    s.selectedIds = s.selectedIds.filter(function (id) { return !!findObj(id); });
+    s.selectedId = s.selectedIds.length ? s.selectedIds[s.selectedIds.length - 1] : null;
+    s._lastPopupId = null;
+    showToast("Objects ungrouped");
+    requestRender();
+  }
+
   function toggleDropdown(btnId, dropdownId) {
     var dd = document.getElementById(dropdownId);
     var isOpen = dd.classList.contains("open");
@@ -476,6 +529,8 @@ function setupPopupHandlers() {
     .addEventListener("click", function () {
       applyArrowHeadMode("none");
     });
+  document.getElementById("popGroup").addEventListener("click", groupSelectedObjects);
+  document.getElementById("popUngroup").addEventListener("click", ungroupSelectedObjects);
   document
     .getElementById("popOpacityBtn")
     .addEventListener("click", function (e) {
@@ -732,6 +787,22 @@ function setupToolbar() {
       setToolActive(b.dataset.tool);
     });
   });
+}
+
+function expandSelectionWithGroups(ids) {
+  var out = [];
+  ids.forEach(function (id) {
+    var obj = findObj(id);
+    if (!obj) return;
+    if (obj.groupId) {
+      objects.forEach(function (other) {
+        if (other.groupId === obj.groupId && out.indexOf(other.id) < 0) out.push(other.id);
+      });
+    } else if (out.indexOf(id) < 0) {
+      out.push(id);
+    }
+  });
+  return out;
 }
 
 function setupTopbar() {
@@ -1016,6 +1087,7 @@ function selectAll() {
   s.selectedIds = objects.map(function (o) {
     return o.id;
   });
+  s.selectedIds = expandSelectionWithGroups(s.selectedIds);
   s.selectedId = s.selectedIds[s.selectedIds.length - 1];
   s._lastPopupId = null;
   requestRender();

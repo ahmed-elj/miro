@@ -10,6 +10,37 @@ import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRot
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, delSel, findObj } from './undo.js';
 
+function getLinkedSelectionIds(id) {
+  var obj = findObj(id);
+  if (!obj || !obj.groupId) return [id];
+  return objects.filter(function(o) { return o.groupId === obj.groupId; }).map(function(o) { return o.id; });
+}
+
+function snapshotMultiDrag(ids) {
+  state.multiDragSnaps = {};
+  ids.forEach(function(id) {
+    var o = findObj(id);
+    if (o) state.multiDragSnaps[id] = normalizeArrowSnap(JSON.parse(JSON.stringify(o)));
+  });
+}
+
+function setSelectionFromObject(id) {
+  var ids = getLinkedSelectionIds(id);
+  state.selectedIds = ids;
+  state.selectedId = id;
+  state._lastPopupId = null;
+}
+
+function expandGroupedIds(ids) {
+  var out = [];
+  ids.forEach(function(id) {
+    getLinkedSelectionIds(id).forEach(function(linkedId) {
+      if (out.indexOf(linkedId) < 0) out.push(linkedId);
+    });
+  });
+  return out;
+}
+
 // ── Select tool: pointer down ──
 export function onSelectDown(wp, sx, sy, shiftKey) {
   var s = state;
@@ -22,18 +53,21 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     }
     if (hits.length) {
       var clicked = hits[0];
+      var linkedClicked = getLinkedSelectionIds(clicked.id);
       var idx = s.selectedIds.indexOf(clicked.id);
       if (idx >= 0) {
-        // Deselect this object
-        s.selectedIds.splice(idx, 1);
+        // Deselect this object, or its whole linked group
+        s.selectedIds = s.selectedIds.filter(function(id) { return linkedClicked.indexOf(id) < 0; });
         if (s.selectedIds.length === 0) {
           s.selectedId = null;
         } else {
           s.selectedId = s.selectedIds[s.selectedIds.length - 1];
         }
       } else {
-        // Add to selection
-        s.selectedIds.push(clicked.id);
+        // Add object, or its whole linked group, to selection
+        linkedClicked.forEach(function(id) {
+          if (s.selectedIds.indexOf(id) < 0) s.selectedIds.push(id);
+        });
         s.selectedId = clicked.id;
       }
       s._lastPopupId = null;
@@ -171,11 +205,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.dragSW = wp;
       s.dragUndo = false;
       // Snapshot all selected objects
-      s.multiDragSnaps = {};
-      s.selectedIds.forEach(function(id) {
-        var o = findObj(id);
-        if (o) s.multiDragSnaps[id] = normalizeArrowSnap(JSON.parse(JSON.stringify(o)));
-      });
+      snapshotMultiDrag(s.selectedIds);
       return;
     }
 
@@ -198,11 +228,11 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.cycleIdx = selInHits;
     } else {
       // New area — select topmost object (clear multiselect)
-      s.selectedId = hits2[0].id;
-      s.selectedIds = [hits2[0].id];
-      s.dragMode = 'move';
+      setSelectionFromObject(hits2[0].id);
+      s.dragMode = s.selectedIds.length > 1 ? 'move-multi' : 'move';
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(hits2[0]));
+      if (s.selectedIds.length > 1) snapshotMultiDrag(s.selectedIds);
       s.dragUndo = false;
       s.cycleHits = null;
       s.cycleIdx = -1;
@@ -271,6 +301,7 @@ export function finishBoxSelect(shiftKey) {
   } else {
     s.selectedIds = newIds;
   }
+  s.selectedIds = expandGroupedIds(s.selectedIds);
 
   if (s.selectedIds.length > 0) {
     s.selectedId = s.selectedIds[s.selectedIds.length - 1];
@@ -288,8 +319,7 @@ export function cycleSelect() {
   var hits = s.cycleHits;
   var nextIdx = s.cycleIdx + 1 < hits.length ? s.cycleIdx + 1 : 0;
   var nextHit = hits[nextIdx];
-  s.selectedId = nextHit.id;
-  s.selectedIds = [nextHit.id];
+  setSelectionFromObject(nextHit.id);
   s.cycleIdx = nextIdx;
   s._lastPopupId = null;
   requestRender();
@@ -541,6 +571,22 @@ export function handleDrag(wp) {
   var obj2 = findObj(s.selectedId);
   if (!obj2 || !s.dragSnap) return;
   var snap2 = s.dragSnap;
+
+  if (s.dragMode === 'move') {
+    var linkedIds = obj2.groupId ? getLinkedSelectionIds(obj2.id) : [obj2.id];
+    if (linkedIds.length > 1) {
+      if (!s.multiDragSnaps) snapshotMultiDrag(linkedIds);
+      linkedIds.forEach(function(id) {
+        var linkedObj = findObj(id);
+        var linkedSnap = s.multiDragSnaps[id];
+        if (!linkedObj || !linkedSnap) return;
+        moveObjectBy(linkedObj, linkedSnap, dx, dy);
+      });
+      s.selectedIds = linkedIds;
+      requestRender();
+      return;
+    }
+  }
 
   if (s.dragMode === 'bend-arrow') {
     obj2.cpX = snap2.cpX + dx;
