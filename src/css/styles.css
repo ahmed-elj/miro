@@ -614,7 +614,10 @@ line-height: 1.4;
 border-radius: 4px;
 color: var(--fg);
 white-space: pre-wrap;
-word-wrap: break-word;
+overflow-wrap: normal;
+word-wrap: normal;
+word-break: normal;
+hyphens: none;
 text-align: center;
 caret-color: var(--accent);
 }

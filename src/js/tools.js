@@ -1130,7 +1130,7 @@ export function startTextCreate(wp) {
   var sp = w2s(wp.x, wp.y);
   var wfs = 20 / cam.zoom;
   ed.style.display = 'block';
-  ed.style.left = sp.x + 'px'; ed.style.top = sp.y + 'px';
+  ed.style.left = snapScreenPx(sp.x) + 'px'; ed.style.top = snapScreenPx(sp.y) + 'px';
   ed.style.transform = 'translate(-50%, -50%)';
   ed.style.transformOrigin = 'center center';
   ed.style.minWidth = '60px';
@@ -1180,9 +1180,10 @@ export function startEditExisting(obj, caretPoint) {
   var b = getBounds(obj), sp = w2s(b.x, b.y);
   if (obj.type === 'text') {
     var ed = document.getElementById('textEditor');
-    var tsp = w2s(obj.x, obj.y);
+    var textBounds = getBounds(obj);
+    var tsp = textBounds ? w2s(textBounds.x, textBounds.y) : w2s(obj.x, obj.y);
 	    ed.style.display = 'block';
-	    ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
+	    ed.style.left = snapScreenPx(tsp.x) + 'px'; ed.style.top = snapScreenPx(tsp.y) + 'px';
 	    applyTextEditorObjectStyles(ed, obj);
 	    ed.innerHTML = spansToHtml(getSpans(obj));
     s.isEditing = true; s.editId = obj.id;
@@ -1270,27 +1271,38 @@ export function updateEditorFS(obj) {
 
 function getTextEditorTransform(obj) {
   var rot = obj.rotation || 0;
-  return 'translate(-50%, -50%) rotate(' + rot + 'rad)';
+  if (Math.abs(rot) < 0.0001) return 'none';
+  return 'rotate(' + rot + 'rad)';
+}
+
+function snapScreenPx(v) {
+  var ratio = window.devicePixelRatio || 1;
+  return Math.round(v * ratio) / ratio;
 }
 
 function applyTextEditorObjectStyles(ed, obj) {
   var scale = getTextBaseScale(obj);
+  var b = getBounds(obj);
   ed.style.transform = getTextEditorTransform(obj);
   ed.style.transformOrigin = 'center center';
+  ed.style.fontFamily = '"Open Sans", system-ui, -apple-system, sans-serif';
   ed.style.color = obj.color || '#e4e4e8';
   ed.style.fontSize = obj.fontSize * scale * cam.zoom + 'px';
+  ed.style.lineHeight = '1.4';
   ed.style.fontWeight = obj.fontWeight || '400';
   ed.style.fontStyle = 'normal';
   ed.style.textDecoration = 'none';
   ed.style.textAlign = obj.textAlign || 'center';
   ed.style.whiteSpace = obj.wrapText ? 'pre-wrap' : 'pre';
-  ed.style.overflowWrap = obj.wrapText ? 'break-word' : 'normal';
-  ed.style.wordBreak = obj.wrapText ? 'break-word' : 'normal';
-  ed.style.minWidth = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : '0';
-  ed.style.width = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : 'auto';
-  ed.style.maxWidth = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : 'none';
-  ed.style.minHeight = obj.boxH ? Math.max(20, obj.boxH * cam.zoom) + 'px' : '1em';
-  ed.style.height = obj.boxH ? Math.max(20, obj.boxH * cam.zoom) + 'px' : 'auto';
+  ed.style.overflowWrap = 'normal';
+  ed.style.wordWrap = 'normal';
+  ed.style.wordBreak = 'normal';
+  ed.style.hyphens = 'none';
+  ed.style.minWidth = b ? Math.max(40, b.w * cam.zoom) + 'px' : '0';
+  ed.style.width = b ? Math.max(40, b.w * cam.zoom) + 'px' : 'auto';
+  ed.style.maxWidth = b ? Math.max(40, b.w * cam.zoom) + 'px' : 'none';
+  ed.style.minHeight = b ? Math.max(20, b.h * cam.zoom) + 'px' : '1em';
+  ed.style.height = b ? Math.max(20, b.h * cam.zoom) + 'px' : 'auto';
 }
 
 // ── Keep editor overlay in sync with camera ──
@@ -1302,10 +1314,16 @@ export function updateEditorPosition() {
 	  if (te.style.display !== 'none' && te.style.display !== '') {
     var wx = +te.dataset.wx, wy = +te.dataset.wy;
     var obj = typeof s.editId === 'number' ? findObj(s.editId) : null;
-    if (obj) { wx = obj.x; wy = obj.y; }
-    var sp = w2s(wx, wy);
-	    te.style.left = sp.x + 'px';
-	    te.style.top = sp.y + 'px';
+    var sp;
+    if (obj && obj.type === 'text') {
+      var tb = getBounds(obj);
+      sp = tb ? w2s(tb.x, tb.y) : w2s(obj.x, obj.y);
+    } else {
+      if (obj) { wx = obj.x; wy = obj.y; }
+      sp = w2s(wx, wy);
+    }
+	    te.style.left = snapScreenPx(sp.x) + 'px';
+	    te.style.top = snapScreenPx(sp.y) + 'px';
 	    if (obj && obj.type === 'text') {
 	      applyTextEditorObjectStyles(te, obj);
 	    } else if (s.editId === 'new-text') {
