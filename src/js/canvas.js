@@ -507,17 +507,13 @@ function drawLocateHighlights(c) {
   var accent = s.settings.accentColor;
   var remaining = s.locateEnd - performance.now();
   if (remaining <= 0) { s.locateEnd = 0; return; }
-  // Fade out over last 800ms; pulse via sin wave
-  var fade = remaining < 800 ? remaining / 800 : 1;
-  var pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
-  var alpha = fade * (0.4 + 0.6 * pulse);
+  var alpha = remaining < 500 ? remaining / 500 : 1;
   var iz = 1 / cam.zoom;
   var pad = 6 * iz;
   c.save();
-  c.strokeStyle = hexToRgba(accent, alpha.toFixed(3));
-  c.lineWidth = 2.5 * iz;
-  c.setLineDash([8 * iz, 4 * iz]);
-  c.lineDashOffset = -performance.now() * 0.03;
+  c.strokeStyle = hexToRgba(accent, (0.9 * alpha).toFixed(3));
+  c.lineWidth = 2 * iz;
+  c.setLineDash([]);
   for (var i = 0; i < objects.length; i++) {
     var b = getRotatedBounds(objects[i]);
     if (!b) continue;
@@ -535,7 +531,6 @@ function drawLocateHighlights(c) {
     }
     c.restore();
   }
-  c.setLineDash([]);
   c.restore();
 }
 

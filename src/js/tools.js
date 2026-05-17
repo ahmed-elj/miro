@@ -1166,6 +1166,10 @@ export function resetZoom() {
 
 export function fitView() {
   if (!objects.length) { resetZoom(); return; }
+  fitObjects(false);
+}
+
+function fitObjects(zoomOutOnly) {
   var a = Infinity, b = Infinity, c2 = -Infinity, d = -Infinity;
   objects.forEach(function(o) {
     var bb = getRotatedBounds(o); if (!bb) return;
@@ -1177,14 +1181,14 @@ export function fitView() {
   var sx = (window.innerWidth - pd * 2) / Math.max(1, cw);
   var sy = (window.innerHeight - pd * 2) / Math.max(1, ch);
   var s = Math.min(sx, sy);
+  if (zoomOutOnly) s = Math.min(s, cam.zoom);
   cam.zoom = s; cam.x = window.innerWidth / 2 - (a + cw / 2) * s; cam.y = window.innerHeight / 2 - (b + ch / 2) * s;
   updateZoomDisplay(); requestRender();
 }
 
 export function locateObjects() {
   if (!objects.length) { showToast('No objects on canvas'); return; }
-  fitView();
-  state.locateEnd = performance.now() + 2500;
+  state.locateEnd = performance.now() + 3000;
   animateLocate();
 }
 

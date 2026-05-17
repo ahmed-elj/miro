@@ -83,7 +83,7 @@
     <div class="popup-sep"></div>
     <button class="pbtn" id="popEditText" title="Edit text (select characters to color)"><i class="fa-solid fa-pen-to-square" style="font-size:11px;"></i></button>
   </div>
-  <div class="popup-row" id="popColorRow"><div class="pop-color-picker-wrap"><input type="color" id="popCustomColor" value="#e4e4e8" title="Custom color"><i class="fa-solid fa-palette" style="font-size:11px;pointer-events:none;position:absolute;"></i></div></div>
+  <div class="popup-row" id="popColorRow" style="display:none;"><div class="pop-color-picker-wrap"><input type="color" id="popCustomColor" value="#e4e4e8" title="Custom color"><i class="fa-solid fa-palette" style="font-size:11px;pointer-events:none;position:absolute;"></i></div></div>
   <div class="popup-row" id="popStickyRow" style="display:none;"></div>
   <div class="popup-row" id="popArrowRow" style="display:none;">
     <button class="pbtn" id="popArrowStart" title="Arrow at start"><i class="fa-solid fa-left-long"></i></button>
@@ -96,6 +96,7 @@
     <button class="pbtn pbtn-wide" id="popUngroup" title="Ungroup selected objects"><i class="fa-solid fa-object-ungroup"></i><span>Ungroup</span></button>
   </div>
   <div class="popup-row">
+    <button class="pbtn" id="popColorsBtn" title="Show colors"><i class="fa-solid fa-palette" style="font-size:11px;"></i></button>
     <div class="pop-dropdown-wrap">
       <button class="pbtn" id="popOpacityBtn" title="Opacity"><i class="fa-solid fa-droplet" style="font-size:11px;"></i></button>
       <div class="pop-dropdown" id="popOpacityDropdown">

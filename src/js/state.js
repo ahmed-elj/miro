@@ -80,6 +80,7 @@ export const state = {
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,
     bgPattern: DEFAULT_SETTINGS.bgPattern,
+    popupColorsExpanded: DEFAULT_SETTINGS.popupColorsExpanded,
     keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
   },
 };

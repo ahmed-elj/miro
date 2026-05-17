@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   canvasColor: '#1a1a1f',
   gridColor: '#28282f',
   bgPattern: 'dots',
+  popupColorsExpanded: false,
   keyMap: Object.assign({}, KEY_MAP),
 };
 

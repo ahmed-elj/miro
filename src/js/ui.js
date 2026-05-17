@@ -196,6 +196,111 @@ function updateCursor() {
     document.getElementById("eraserCursor").style.display = "none";
 }
 
+function clamp(n, min, max) {
+  if (max < min) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+function positionPopupNearBounds(pop, b, estimatedHeight) {
+  var margin = 10;
+  var pW = pop.offsetWidth || 380;
+  var pH = pop.offsetHeight || estimatedHeight || 140;
+  var topbar = document.getElementById("topbar");
+  var bottombar = document.getElementById("bottombar");
+  var safeTop = margin;
+  var safeBottom = window.innerHeight - margin;
+  if (topbar) {
+    var topRect = topbar.getBoundingClientRect();
+    safeTop = Math.max(safeTop, topRect.bottom + margin);
+  }
+  if (bottombar) {
+    var bottomRect = bottombar.getBoundingClientRect();
+    safeBottom = Math.min(safeBottom, bottomRect.top - margin);
+  }
+  var tl = w2s(b.x, b.y);
+  var rect = {
+    left: tl.x,
+    top: tl.y,
+    right: tl.x + b.w * cam.zoom,
+    bottom: tl.y + b.h * cam.zoom,
+  };
+  var visLeft = Math.max(rect.left, margin);
+  var visRight = Math.min(rect.right, window.innerWidth - margin);
+  var visTop = Math.max(rect.top, safeTop);
+  var visBottom = Math.min(rect.bottom, safeBottom);
+  if (visLeft > visRight) {
+    var cx = clamp((rect.left + rect.right) / 2, margin, window.innerWidth - margin);
+    visLeft = cx;
+    visRight = cx;
+  }
+  if (visTop > visBottom) {
+    var cy = clamp((rect.top + rect.bottom) / 2, safeTop, safeBottom);
+    visTop = cy;
+    visBottom = cy;
+  }
+
+  var left = clamp((visLeft + visRight) / 2 - pW / 2, margin, window.innerWidth - pW - margin);
+  var rotateClearance = ROTATE_HANDLE_DIST + ROTATE_HANDLE_RADIUS + 12;
+  var above = rect.top - pH - rotateClearance;
+  var below = rect.bottom + 10;
+  var top;
+  if (above >= safeTop) {
+    top = above;
+  } else if (below + pH <= safeBottom) {
+    top = below;
+  } else if (visBottom - visTop >= pH + 20) {
+    top = clamp(visTop + 10, safeTop, safeBottom - pH);
+  } else {
+    top = clamp((visTop + visBottom) / 2 - pH / 2, safeTop, safeBottom - pH);
+  }
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+}
+
+function getPopupSafeArea() {
+  var margin = 10;
+  var topbar = document.getElementById("topbar");
+  var bottombar = document.getElementById("bottombar");
+  var safeTop = margin;
+  var safeBottom = window.innerHeight - margin;
+  if (topbar) safeTop = Math.max(safeTop, topbar.getBoundingClientRect().bottom + margin);
+  if (bottombar) safeBottom = Math.min(safeBottom, bottombar.getBoundingClientRect().top - margin);
+  return { top: safeTop, bottom: safeBottom };
+}
+
+function positionPopupDropdown(dropdown) {
+  if (!dropdown) return;
+  var safe = getPopupSafeArea();
+  dropdown.classList.remove("open-below");
+  dropdown.style.maxHeight = "";
+  dropdown.style.overflowY = "";
+  var aboveRect = dropdown.getBoundingClientRect();
+  if (aboveRect.top < safe.top) dropdown.classList.add("open-below");
+  var rect = dropdown.getBoundingClientRect();
+  if (rect.bottom > safe.bottom && aboveRect.top >= safe.top) {
+    dropdown.classList.remove("open-below");
+    rect = dropdown.getBoundingClientRect();
+  }
+  var maxHeight = Math.max(120, safe.bottom - safe.top);
+  if (rect.top < safe.top || rect.bottom > safe.bottom) {
+    dropdown.style.maxHeight = maxHeight + "px";
+    dropdown.style.overflowY = "auto";
+  }
+}
+
+function syncPaletteRows(hasColor, hasSticky) {
+  var expanded = !!state.settings.popupColorsExpanded;
+  var btn = document.getElementById("popColorsBtn");
+  var colorRow = document.getElementById("popColorRow");
+  var stickyRow = document.getElementById("popStickyRow");
+  var hasPalette = !!(hasColor || hasSticky);
+  btn.style.display = hasPalette ? "flex" : "none";
+  btn.classList.toggle("active", expanded && hasPalette);
+  btn.title = expanded ? "Hide colors" : "Show colors";
+  colorRow.style.display = expanded && hasColor ? "flex" : "none";
+  stickyRow.style.display = expanded && hasSticky ? "flex" : "none";
+}
+
 // ── Popup update ──
 function updatePopup() {
   var s = state;
@@ -227,8 +332,7 @@ function updatePopup() {
     pop.style.top = top + "px";
     pop.classList.add("visible");
     document.getElementById("popTextRow").style.display = "flex";
-    document.getElementById("popColorRow").style.display = "flex";
-    document.getElementById("popStickyRow").style.display = "none";
+    syncPaletteRows(true, false);
     document.getElementById("popArrowRow").style.display = "none";
     document.getElementById("popGroupRow").style.display = "none";
     try {
@@ -279,6 +383,7 @@ function updatePopup() {
         if (bb) allBounds.push(bb);
       }
     });
+    var groupPopupBounds = null;
     if (allBounds.length) {
       var abx = Infinity,
         aby = Infinity,
@@ -290,22 +395,11 @@ function updatePopup() {
         abr = Math.max(abr, bb.x + bb.w);
         abb = Math.max(abb, bb.y + bb.h);
       });
-      var popupClearance = ROTATE_HANDLE_DIST + ROTATE_HANDLE_RADIUS + 10;
-      var sp = w2s(abx, aby),
-        sh2 = (abb - aby) * cam.zoom,
-        ph3 = 80;
-      var top3 = sp.y - ph3 - popupClearance;
-      if (top3 < 10) top3 = sp.y + sh2 + 10;
-      var left3 = sp.x;
-      if (left3 + 380 > window.innerWidth) left3 = window.innerWidth - 390;
-      if (left3 < 10) left3 = 10;
-      pop.style.left = left3 + "px";
-      pop.style.top = top3 + "px";
+      groupPopupBounds = { x: abx, y: aby, w: abr - abx, h: abb - aby };
     }
     pop.classList.add("visible");
     document.getElementById("popTextRow").style.display = "none";
-    document.getElementById("popColorRow").style.display = "flex";
-    document.getElementById("popStickyRow").style.display = "none";
+    syncPaletteRows(true, false);
     document.getElementById("popArrowRow").style.display = "none";
     document.getElementById("popGroupRow").style.display = "flex";
     document.getElementById("popEditText").style.display = "none";
@@ -327,6 +421,9 @@ function updatePopup() {
           100,
       ) + "%";
     syncFillControls(primaryObj);
+    if (groupPopupBounds && !document.querySelector(".pop-dropdown.open")) {
+      positionPopupNearBounds(pop, groupPopupBounds, 80);
+    }
     s._lastPopupId = null;
     return;
   }
@@ -346,31 +443,14 @@ function updatePopup() {
     pop.classList.remove("visible");
     return;
   }
-  // Don't reposition popup while a dropdown slider is open
   var dropdownOpen = document.querySelector(".pop-dropdown.open");
-  if (!dropdownOpen) {
-    var popupClearance2 = ROTATE_HANDLE_DIST + ROTATE_HANDLE_RADIUS + 10;
-    var sp = w2s(b.x, b.y),
-      sh = b.h * cam.zoom,
-      ph2 = 140;
-    var top2 = sp.y - ph2 - popupClearance2;
-    if (top2 < 10) top2 = sp.y + sh + 10;
-    var left2 = sp.x;
-    if (left2 + 380 > window.innerWidth) left2 = window.innerWidth - 390;
-    if (left2 < 10) left2 = 10;
-    pop.style.left = left2 + "px";
-    pop.style.top = top2 + "px";
-  }
   pop.classList.add("visible");
   document.getElementById("popTextRow").style.display =
     selObj.type === "text" ? "flex" : "none";
-  document.getElementById("popColorRow").style.display =
-    ["path", "line", "arrow", "rect", "ellipse", "text"].indexOf(selObj.type) >=
-    0
-      ? "flex"
-      : "none";
-  document.getElementById("popStickyRow").style.display =
-    selObj.type === "sticky" ? "flex" : "none";
+  syncPaletteRows(
+    ["path", "line", "arrow", "rect", "ellipse", "text"].indexOf(selObj.type) >= 0,
+    selObj.type === "sticky",
+  );
   document.getElementById("popArrowRow").style.display =
     selObj.type === "arrow" ? "flex" : "none";
   document.getElementById("popGroupRow").style.display = selObj.groupId ? "flex" : "none";
@@ -451,6 +531,7 @@ function updatePopup() {
       document.getElementById("popStrokeWeight").step = 0.1;
     }
   }
+  if (!dropdownOpen) positionPopupNearBounds(pop, b, 140);
 }
 
 function normalizeHexColor(color) {
@@ -591,6 +672,9 @@ function setupPopupHandlers() {
   function closeDropdowns() {
     document.querySelectorAll(".pop-dropdown").forEach(function (d) {
       d.classList.remove("open");
+      d.classList.remove("open-below");
+      d.style.maxHeight = "";
+      d.style.overflowY = "";
     });
   }
   function applyArrowHeadMode(mode) {
@@ -670,7 +754,12 @@ function setupPopupHandlers() {
     var dd = document.getElementById(dropdownId);
     var isOpen = dd.classList.contains("open");
     closeDropdowns();
-    if (!isOpen) dd.classList.add("open");
+    if (!isOpen) {
+      dd.classList.add("open");
+      requestAnimationFrame(function () {
+        positionPopupDropdown(dd);
+      });
+    }
   }
 
   document
@@ -695,6 +784,12 @@ function setupPopupHandlers() {
     });
   document.getElementById("popGroup").addEventListener("click", groupSelectedObjects);
   document.getElementById("popUngroup").addEventListener("click", ungroupSelectedObjects);
+  document.getElementById("popColorsBtn").addEventListener("click", function (e) {
+    e.stopPropagation();
+    state.settings.popupColorsExpanded = !state.settings.popupColorsExpanded;
+    saveToStorage();
+    requestRender();
+  });
   document
     .getElementById("popOpacityBtn")
     .addEventListener("click", function (e) {
@@ -1289,6 +1384,7 @@ function resetSettings() {
   state.settings.canvasColor = DEFAULT_SETTINGS.canvasColor;
   state.settings.gridColor = DEFAULT_SETTINGS.gridColor;
   state.settings.bgPattern = DEFAULT_SETTINGS.bgPattern;
+  state.settings.popupColorsExpanded = DEFAULT_SETTINGS.popupColorsExpanded;
   state.settings.keyMap = Object.assign({}, DEFAULT_SETTINGS.keyMap);
   applySettingsToUI();
   requestRender();
@@ -1742,6 +1838,7 @@ function mergeSettings(saved) {
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,
     bgPattern: DEFAULT_SETTINGS.bgPattern,
+    popupColorsExpanded: DEFAULT_SETTINGS.popupColorsExpanded,
     keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
   };
   if (saved && typeof saved === "object") {
@@ -1749,6 +1846,7 @@ function mergeSettings(saved) {
       if (typeof saved[key] === "string" && /^#[0-9a-fA-F]{6}$/.test(saved[key])) next[key] = saved[key];
     });
     if (["dots", "grid", "none"].indexOf(saved.bgPattern) >= 0) next.bgPattern = saved.bgPattern;
+    if (typeof saved.popupColorsExpanded === "boolean") next.popupColorsExpanded = saved.popupColorsExpanded;
     if (saved.keyMap && typeof saved.keyMap === "object") {
       next.keyMap = {};
       Object.keys(saved.keyMap).forEach(function (code) {
