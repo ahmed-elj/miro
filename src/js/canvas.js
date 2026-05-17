@@ -465,24 +465,31 @@ function drawHandles(c) {
     c.rotate(rot);
     c.translate(-cx, -cy);
   }
-  if (obj.type === 'arrow') {
-    var bend = getArrowBendHandle(obj);
-    var cp = getArrowControlPoint(obj);
+  if (obj.type === 'arrow' || obj.type === 'line') {
     c.strokeStyle = accent;
     c.lineWidth = 1.25 * iz;
     c.setLineDash([4 * iz, 3 * iz]);
     c.beginPath();
-    c.moveTo(obj.x1, obj.y1);
-    c.quadraticCurveTo(cp.x, cp.y, obj.x2, obj.y2);
+    if (obj.type === 'arrow') {
+      var bend = getArrowBendHandle(obj);
+      var cp = getArrowControlPoint(obj);
+      c.moveTo(obj.x1, obj.y1);
+      c.quadraticCurveTo(cp.x, cp.y, obj.x2, obj.y2);
+    } else {
+      c.moveTo(obj.x1, obj.y1);
+      c.lineTo(obj.x2, obj.y2);
+    }
     c.stroke();
     c.setLineDash([]);
-    c.beginPath();
-    c.arc(bend.x, bend.y, HANDLE_SIZE * 1.15 * iz, 0, Math.PI * 2);
-    c.fillStyle = accent;
-    c.fill();
-    c.strokeStyle = '#141417';
-    c.lineWidth = 1.5 * iz;
-    c.stroke();
+    if (obj.type === 'arrow') {
+      c.beginPath();
+      c.arc(bend.x, bend.y, HANDLE_SIZE * 1.15 * iz, 0, Math.PI * 2);
+      c.fillStyle = accent;
+      c.fill();
+      c.strokeStyle = '#141417';
+      c.lineWidth = 1.5 * iz;
+      c.stroke();
+    }
     [
       { x: obj.x1, y: obj.y1 },
       { x: obj.x2, y: obj.y2 },

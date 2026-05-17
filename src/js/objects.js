@@ -265,7 +265,7 @@ export function hitArrowBendHandle(obj, wx, wy) {
 }
 
 export function hitArrowEndpointHandle(obj, wx, wy) {
-  if (!obj || obj.type !== 'arrow') return null;
+  if (!obj || (obj.type !== 'arrow' && obj.type !== 'line')) return null;
   var b = getBounds(obj);
   if (!b) return null;
   var rot = obj.rotation || 0;

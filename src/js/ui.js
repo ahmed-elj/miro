@@ -464,6 +464,17 @@ function updatePopup() {
         findObj(s.editId) &&
         findObj(s.editId).type === "sticky"));
 
+  function syncPopupLockButton(targets) {
+    var btn = document.getElementById("popLock");
+    if (!btn) return;
+    var hasTargets = targets && targets.length > 0;
+    var shouldUnlock = hasTargets && targets.every(function (obj) { return obj.locked; });
+    btn.disabled = !hasTargets;
+    btn.classList.toggle("active", shouldUnlock);
+    btn.title = shouldUnlock ? "Unlock" : "Lock";
+    btn.querySelector("i").className = shouldUnlock ? "fa-solid fa-lock-open" : "fa-solid fa-lock";
+  }
+
   if (isTextEdit) {
     var ed = document.getElementById("textEditor");
     var er = ed.getBoundingClientRect();
@@ -490,6 +501,7 @@ function updatePopup() {
         .classList.toggle("active", document.queryCommandState("underline"));
     } catch (e) {}
     var obj = typeof s.editId === "number" ? findObj(s.editId) : null;
+    syncPopupLockButton(obj ? [obj] : []);
     document.getElementById("popFontSize").textContent = Math.round(
       (obj ? obj.fontSize : 20 / cam.zoom) * cam.zoom,
     );
@@ -564,6 +576,7 @@ function updatePopup() {
     document.getElementById("popGroup").style.display = "flex";
     document.getElementById("popUngroup").style.display = hasGroupedObject ? "flex" : "none";
     document.getElementById("popFillBtn").style.display = "flex";
+    syncPopupLockButton(getSelectedObjects());
     // Show opacity of primary selected object
     var primaryObj = findObj(s.selectedId);
     document.getElementById("popOpacity").value =
@@ -611,6 +624,7 @@ function updatePopup() {
   document.getElementById("popUngroup").style.display = selObj.groupId ? "flex" : "none";
   document.getElementById("popEditText").style.display =
     selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
+  syncPopupLockButton([selObj]);
   if (selObj.type === "arrow") {
     var arrowMode = getArrowHeadMode(selObj);
     document
@@ -1607,6 +1621,9 @@ function setupPopupHandlers() {
     objects[i] = objects[i - 1];
     objects[i - 1] = tmp;
     requestRender();
+  });
+  document.getElementById("popLock").addEventListener("click", function () {
+    toggleSelectionLock();
   });
   document.getElementById("popDelete").addEventListener("click", function () {
     removeUnlockedSelected();

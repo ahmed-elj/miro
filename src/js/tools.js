@@ -228,7 +228,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.dragUndo = false;
       return;
     }
-    if (obj && !obj.locked && obj.type !== 'arrow' && hitRotateHandle(obj, wp.x, wp.y)) {
+    if (obj && !obj.locked && obj.type !== 'arrow' && obj.type !== 'line' && hitRotateHandle(obj, wp.x, wp.y)) {
       s.dragMode = 'rotate';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -262,7 +262,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
     if (obj && !obj.locked) {
-      var h = obj.type === 'arrow' ? null : hitHandle(obj, wp.x, wp.y);
+      var h = (obj.type === 'arrow' || obj.type === 'line') ? null : hitHandle(obj, wp.x, wp.y);
       if (h) {
         s.dragMode = h;
         s.dragSW = wp;
