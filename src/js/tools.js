@@ -525,11 +525,10 @@ function scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy) {
     }
     break;
   case 'text':
-    // For text, x/y is the center point; resized text can be scaled per axis.
+    // Text must keep glyph proportions even when the group resize is non-uniform.
     obj.x = anchorX + (snap.x - anchorX) * sx;
     obj.y = anchorY + (snap.y - anchorY) * sy;
-    obj.scaleX = Math.max(0.05, (snap.scaleX || 1) * Math.abs(sx));
-    obj.scaleY = Math.max(0.05, (snap.scaleY || 1) * Math.abs(sy));
+    applyTextUniformScale(obj, snap, Math.max(Math.abs(sx), Math.abs(sy), 0.05));
     break;
   case 'sticky':
     // Sticky: x/y is top-left; scale position, size, and font proportionally
@@ -608,6 +607,25 @@ function getResizeGeometry(b, dm, dx, dy) {
 
 function isSideResizeMode(dm) {
   return dm === 'resize-t' || dm === 'resize-r' || dm === 'resize-b' || dm === 'resize-l';
+}
+
+function getTextBaseScale(snap) {
+  return Math.max(0.05, snap.scaleX || 1, snap.scaleY || 1);
+}
+
+function applyTextUniformScale(obj, snap, scale) {
+  var uniformScale = Math.max(0.1, scale);
+  var baseScale = getTextBaseScale(snap);
+  obj.fontSize = snap.fontSize;
+  obj.scaleX = baseScale * uniformScale;
+  obj.scaleY = baseScale * uniformScale;
+  if (snap.boxW) obj.boxW = Math.max(40 / cam.zoom, snap.boxW * uniformScale);
+  if (snap.boxH) obj.boxH = Math.max(20 / cam.zoom, snap.boxH * uniformScale);
+  if (snap.wrapText) {
+    obj.wrapText = true;
+    obj.wrapWidth = Math.max(40 / cam.zoom, (snap.wrapWidth || snap.boxW || getBounds(snap).w) * uniformScale);
+    obj.boxW = obj.wrapWidth;
+  }
 }
 
 // ── Drag handling ──
@@ -911,80 +929,29 @@ function applyTextResize(obj, snap, dx, dy, preserveAspect) {
     return;
   }
   var dm = state.dragMode;
-  if (isSideResizeMode(dm)) {
-    var left = ob.x, right = ob.x + ob.w, top = ob.y, bottom = ob.y + ob.h;
-    if (dm === 'resize-r') right += dx;
-    else if (dm === 'resize-l') left += dx;
-    else if (dm === 'resize-b') bottom += dy;
-    else if (dm === 'resize-t') top += dy;
-    var sideScaleX = Math.max(0.1, Math.abs(right - left) / ob.w);
-    var sideScaleY = Math.max(0.1, Math.abs(bottom - top) / ob.h);
-    obj.fontSize = snap.fontSize;
-    if (snap.wrapText) {
-      obj.wrapText = true;
-      obj.wrapWidth = Math.max(40 / cam.zoom, (snap.wrapWidth || ob.w) * sideScaleX);
-      obj.scaleX = snap.scaleX || 1;
-      obj.scaleY = (snap.scaleY || 1) * sideScaleY;
-    } else {
-      obj.scaleX = (snap.scaleX || 1) * sideScaleX;
-      obj.scaleY = (snap.scaleY || 1) * sideScaleY;
-    }
-    var sideCenterX = (left + right) / 2;
-    var sideCenterY = (top + bottom) / 2;
-    if (snap.rotation || 0) {
-      var sideSnapBounds = getBounds(snap);
-      var sideSnapCx = sideSnapBounds.x + sideSnapBounds.w / 2;
-      var sideSnapCy = sideSnapBounds.y + sideSnapBounds.h / 2;
-      var sideRotatedCenter = rotateAroundPoint(sideCenterX, sideCenterY, sideSnapCx, sideSnapCy, snap.rotation || 0);
-      obj.x = sideRotatedCenter.x;
-      obj.y = sideRotatedCenter.y;
-    } else {
-      obj.x = sideCenterX;
-      obj.y = sideCenterY;
-    }
-    return;
-  }
-  var ax, ay, cx, cy;
-  if (dm === 'resize-br') {
-    ax = ob.x; ay = ob.y; cx = ob.x + ob.w + dx; cy = ob.y + ob.h + dy;
-  } else if (dm === 'resize-bl') {
-    ax = ob.x + ob.w; ay = ob.y; cx = ob.x + dx; cy = ob.y + ob.h + dy;
-  } else if (dm === 'resize-tr') {
-    ax = ob.x; ay = ob.y + ob.h; cx = ob.x + ob.w + dx; cy = ob.y + dy;
-  } else {
-    ax = ob.x + ob.w; ay = ob.y + ob.h; cx = ob.x + dx; cy = ob.y + dy;
-  }
-  var textScaleX = Math.max(0.1, Math.abs(cx - ax) / ob.w);
-  var textScaleY = Math.max(0.1, Math.abs(cy - ay) / ob.h);
-  if (preserveAspect) {
-    var tc = constrainResizeScales(ob.w, ob.h, textScaleX, textScaleY, 0.1);
-    textScaleX = tc.sx;
-    textScaleY = tc.sy;
-    cx = ax + (cx >= ax ? ob.w * textScaleX : -ob.w * textScaleX);
-    cy = ay + (cy >= ay ? ob.h * textScaleY : -ob.h * textScaleY);
-  }
+  var minW = 40 / cam.zoom;
+  var minH = 20 / cam.zoom;
+  var boxW = ob.w;
+  var boxH = ob.h;
+  if (dm === 'resize-r' || dm === 'resize-tr' || dm === 'resize-br') boxW = ob.w + dx;
+  if (dm === 'resize-l' || dm === 'resize-tl' || dm === 'resize-bl') boxW = ob.w - dx;
+  if (dm === 'resize-b' || dm === 'resize-bl' || dm === 'resize-br') boxH = ob.h + dy;
+  if (dm === 'resize-t' || dm === 'resize-tl' || dm === 'resize-tr') boxH = ob.h - dy;
+  boxW = Math.max(minW, boxW);
+  boxH = Math.max(minH, boxH);
   obj.fontSize = snap.fontSize;
-  if (snap.wrapText) {
-    obj.wrapText = true;
-    obj.wrapWidth = Math.max(40 / cam.zoom, (snap.wrapWidth || ob.w) * textScaleX);
-    obj.scaleX = snap.scaleX || 1;
-    obj.scaleY = (snap.scaleY || 1) * textScaleY;
-  } else {
-    obj.scaleX = (snap.scaleX || 1) * textScaleX;
-    obj.scaleY = (snap.scaleY || 1) * textScaleY;
-  }
-  var localCenterX = (ax + cx) / 2;
-  var localCenterY = (ay + cy) / 2;
-  if (snap.rotation || 0) {
-    var snapBounds = getBounds(snap);
-    var snapCx = snapBounds.x + snapBounds.w / 2;
-    var snapCy = snapBounds.y + snapBounds.h / 2;
-    var rotatedCenter = rotateAroundPoint(localCenterX, localCenterY, snapCx, snapCy, snap.rotation || 0);
-    obj.x = rotatedCenter.x;
-    obj.y = rotatedCenter.y;
-  } else {
-    obj.x = localCenterX;
-    obj.y = localCenterY;
+  obj.scaleX = getTextBaseScale(snap);
+  obj.scaleY = getTextBaseScale(snap);
+  obj.wrapText = true;
+  obj.wrapWidth = boxW;
+  obj.boxW = boxW;
+  obj.boxH = boxH;
+  obj.x = ob.x + boxW / 2;
+  obj.y = ob.y + boxH / 2;
+  var resizedBounds = getBounds(obj);
+  if (resizedBounds) {
+    obj.x += ob.x - resizedBounds.x;
+    obj.y += ob.y - resizedBounds.y;
   }
 }
 
@@ -1241,7 +1208,7 @@ export function finishEditing() {
     var spans = parseHtmlSpans(te, te.dataset.color || s.curColor);
     var text = spans.map(function(sp) { return sp.text; }).join('').trim();
 	    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, scaleX: 1, scaleY: 1, color: te.dataset.color || s.curColor, textAlign: 'center', wrapText: false, opacity: 1, rotation: 0 });
-	    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
+	    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
     addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1, rotation: 0 });
@@ -1251,7 +1218,7 @@ export function finishEditing() {
     if (obj) {
       if (obj.type === 'text' && teVisible) {
 	        saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
-	        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
+	        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
       } else if (obj.type === 'sticky' && se.style.display === 'block') {
         saveState(); obj.text = se.value || 'Note';
         se.style.display = 'none'; se.value = '';
@@ -1269,16 +1236,15 @@ export function updateEditorFS(obj) {
 
 function getTextEditorTransform(obj) {
   var rot = obj.rotation || 0;
-  var sy = obj.scaleY || 1;
-  return 'translate(-50%, -50%) rotate(' + rot + 'rad) scale(1, ' + sy + ') translateY(-0.08em)';
+  return 'translate(-50%, -50%) rotate(' + rot + 'rad)';
 }
 
 function applyTextEditorObjectStyles(ed, obj) {
-  var sx = obj.scaleX || 1;
+  var scale = getTextBaseScale(obj);
   ed.style.transform = getTextEditorTransform(obj);
   ed.style.transformOrigin = 'center center';
   ed.style.color = obj.color || '#e4e4e8';
-  ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
+  ed.style.fontSize = obj.fontSize * scale * cam.zoom + 'px';
   ed.style.fontWeight = obj.fontWeight || '400';
   ed.style.fontStyle = 'normal';
   ed.style.textDecoration = 'none';
@@ -1286,12 +1252,11 @@ function applyTextEditorObjectStyles(ed, obj) {
   ed.style.whiteSpace = obj.wrapText ? 'pre-wrap' : 'pre';
   ed.style.overflowWrap = obj.wrapText ? 'break-word' : 'normal';
   ed.style.wordBreak = obj.wrapText ? 'break-word' : 'normal';
-  ed.style.minWidth = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : '0';
-  ed.style.width = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : 'auto';
-  ed.style.maxWidth = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : 'none';
-  if (!obj.wrapText && sx !== 1) {
-    ed.style.letterSpacing = '0';
-  }
+  ed.style.minWidth = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : '0';
+  ed.style.width = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : 'auto';
+  ed.style.maxWidth = obj.wrapText && (obj.wrapWidth || obj.boxW) ? Math.max(40, (obj.wrapWidth || obj.boxW) * cam.zoom) + 'px' : 'none';
+  ed.style.minHeight = obj.boxH ? Math.max(20, obj.boxH * cam.zoom) + 'px' : '1em';
+  ed.style.height = obj.boxH ? Math.max(20, obj.boxH * cam.zoom) + 'px' : 'auto';
 }
 
 // ── Keep editor overlay in sync with camera ──
@@ -1316,6 +1281,8 @@ export function updateEditorPosition() {
 	      te.style.minWidth = '60px';
 	      te.style.width = 'auto';
 	      te.style.maxWidth = 'none';
+	      te.style.minHeight = '1em';
+	      te.style.height = 'auto';
 	      te.style.whiteSpace = 'pre-wrap';
 	      te.style.textAlign = 'center';
 	    }

@@ -287,10 +287,16 @@ function drawText(c, o) {
   }
   c.save(); c.translate(o.x, o.y); c.scale(sc * scaleX, sc * scaleY); c.textBaseline = 'middle';
   var align = o.textAlign || 'center';
-  var cy = -layout.totalHeight / 2 + layout.lineHeight / 2;
+  var contentW = (layout.maxW * sc || 1) * scaleX;
+  var contentH = (layout.totalHeight * sc || o.fontSize) * scaleY;
+  var boxW = Math.max(contentW, o.boxW || o.wrapWidth || 0);
+  var boxH = Math.max(contentH, o.boxH || 0);
+  var localBoxW = boxW / Math.max(0.001, Math.abs(sc * scaleX));
+  var localBoxH = boxH / Math.max(0.001, Math.abs(sc * scaleY));
+  var cy = -localBoxH / 2 + layout.lineHeight / 2;
   layout.lines.forEach(function(line) {
     var lw = measureTextLine(c, line, layout);
-    var cx = align === 'left' ? -layout.maxW / 2 : align === 'right' ? layout.maxW / 2 - lw : -lw / 2;
+    var cx = align === 'left' ? -localBoxW / 2 : align === 'right' ? localBoxW / 2 - lw : -lw / 2;
     line.forEach(function(s) {
       c.font = textFont(s, layout.baseWeight, layout.size, layout.family);
       c.fillStyle = s.color;

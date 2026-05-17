@@ -95,7 +95,8 @@ export function getTextLayout(ctx, obj, family) {
   var scaleX = obj.scaleX || 1;
   var scaleY = obj.scaleY || 1;
   var sc = obj.fontSize / size;
-  var wrapWidth = obj.wrapText && obj.wrapWidth ? obj.wrapWidth / Math.max(0.001, sc * scaleX) : 0;
+  var textBoxWidth = obj.wrapWidth || obj.boxW;
+  var wrapWidth = obj.wrapText && textBoxWidth ? textBoxWidth / Math.max(0.001, sc * scaleX) : 0;
   var rawLines = splitSpanLines(spans);
   var lines = [];
   rawLines.forEach(function(line) {

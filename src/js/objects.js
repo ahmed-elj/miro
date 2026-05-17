@@ -63,8 +63,10 @@ export function getBounds(obj) {
   case 'text': {
   var tc = textMeasureCtx;
   var layout = getTextLayout(tc, obj, 'Open Sans');
-  var w = (layout.maxW * layout.scale || 1) * layout.scaleX;
-  var h = (layout.totalHeight * layout.scale || obj.fontSize) * layout.scaleY;
+  var contentW = (layout.maxW * layout.scale || 1) * layout.scaleX;
+  var contentH = (layout.totalHeight * layout.scale || obj.fontSize) * layout.scaleY;
+  var w = Math.max(contentW, obj.boxW || obj.wrapWidth || 0);
+  var h = Math.max(contentH, obj.boxH || 0);
   return { x: obj.x - w / 2, y: obj.y - h / 2, w: w, h: h };
 }
   }
