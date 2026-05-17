@@ -342,9 +342,20 @@ function drawStickyText(c, o) {
   var pad = Math.min(o.w, o.h) * 0.08;
   c.save(); c.translate(o.x + pad, o.y + pad); c.scale(sc, sc);
   c.fillStyle = '#1a1a1f'; c.font = '500 ' + rS + 'px Open Sans'; c.textBaseline = 'top';
-  var mxW = (o.w - pad * 2) / sc, cy = 0;
+  c.textAlign = o.textAlign || 'center';
+  var mxW = (o.w - pad * 2) / sc;
+  var mxH = (o.h - pad * 2) / sc;
+  var lineH = rS * 1.45;
+  var lines = [];
   o.text.split('\n').forEach(function(l) {
-    wrapLine(c, l, mxW).forEach(function(wl2) { c.fillText(wl2, 0, cy); cy += rS * 1.45; });
+    wrapLine(c, l, mxW).forEach(function(wl2) { lines.push(wl2); });
+  });
+  var totalH = lines.length * lineH;
+  var cy = Math.max(0, (mxH - totalH) / 2);
+  var tx = c.textAlign === 'left' ? 0 : c.textAlign === 'right' ? mxW : mxW / 2;
+  lines.forEach(function(line) {
+    c.fillText(line, tx, cy);
+    cy += lineH;
   });
   c.restore();
 }

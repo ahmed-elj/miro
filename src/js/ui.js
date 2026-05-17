@@ -540,7 +540,7 @@ function updatePopup() {
   var dropdownOpen = document.querySelector(".pop-dropdown.open");
   pop.classList.add("visible");
   document.getElementById("popTextRow").style.display =
-    selObj.type === "text" ? "flex" : "none";
+    selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
   syncPaletteRows(
     ["path", "line", "arrow", "rect", "ellipse", "text"].indexOf(selObj.type) >= 0,
     selObj.type === "sticky",
@@ -591,6 +591,17 @@ function updatePopup() {
     document.getElementById("popAlignCenter").classList.toggle("active", (selObj.textAlign || "center") === "center");
     document.getElementById("popAlignRight").classList.toggle("active", (selObj.textAlign || "center") === "right");
     document.getElementById("popWrapText").classList.toggle("active", !!selObj.wrapText);
+    document.getElementById("popFontSize").textContent = Math.round(
+      selObj.fontSize * cam.zoom,
+    );
+  } else if (selObj.type === "sticky") {
+    document.getElementById("popBold").classList.remove("active");
+    document.getElementById("popItalic").classList.remove("active");
+    document.getElementById("popUnder").classList.remove("active");
+    document.getElementById("popAlignLeft").classList.toggle("active", (selObj.textAlign || "center") === "left");
+    document.getElementById("popAlignCenter").classList.toggle("active", (selObj.textAlign || "center") === "center");
+    document.getElementById("popAlignRight").classList.toggle("active", (selObj.textAlign || "center") === "right");
+    document.getElementById("popWrapText").classList.remove("active");
     document.getElementById("popFontSize").textContent = Math.round(
       selObj.fontSize * cam.zoom,
     );
@@ -1295,7 +1306,7 @@ function setupPopupHandlers() {
   });
   function setTextAlign(align) {
     var o = findObj(s.selectedId);
-    if (!o || o.type !== "text") return;
+    if (!o || (o.type !== "text" && o.type !== "sticky")) return;
     saveState();
     o.textAlign = align;
     requestRender();
@@ -2275,7 +2286,12 @@ function setupPointerEvents() {
   });
   canvas.addEventListener("contextmenu", function (e) {
     e.preventDefault();
-    if (s.isEditing) finishEditing();
+    if (Date.now() < s.suppressContextMenuUntil) return;
+    if (s.isEditing) {
+      finishEditing();
+      s.suppressContextMenuUntil = Date.now() + 700;
+      return;
+    }
     var r = canvas.getBoundingClientRect();
     var wp = s2w(e.clientX - r.left, e.clientY - r.top);
     var target = getTopObjectAt(wp);
@@ -2295,6 +2311,10 @@ function onPointerDown(e) {
     d.classList.remove("open");
   });
   if (s.isEditing) {
+    if (e.button === 2) {
+      s.suppressContextMenuUntil = Date.now() + 700;
+      if (s.curTool !== "select") setToolActive("select");
+    }
     finishEditing();
     return;
   }
@@ -2314,6 +2334,16 @@ function onPointerDown(e) {
   if (e.button === 1) {
     e.preventDefault();
     startPan(sx, sy);
+    s.panButton = 1;
+    return;
+  }
+  if (e.button === 2) {
+    e.preventDefault();
+    s.rightPanMoved = false;
+    s.rightPanStartedTool = s.curTool;
+    if (s.curTool !== "select") setToolActive("select");
+    startPan(sx, sy);
+    s.panButton = 2;
     return;
   }
   if (e.button !== 0) return;
@@ -2373,6 +2403,9 @@ function onPointerMove(e) {
     ec.style.height = "20px";
   }
   if (s.isPan) {
+    if (s.panButton === 2 && Math.hypot(sx - s.panSt.x, sy - s.panSt.y) > 3) {
+      s.rightPanMoved = true;
+    }
     cam.x = s.panCamSt.x + (sx - s.panSt.x);
     cam.y = s.panCamSt.y + (sy - s.panSt.y);
     requestRender();
@@ -2410,7 +2443,13 @@ function onPointerUp(e) {
     sy = e.clientY - r.top;
   var wp = s2w(sx, sy);
   if (s.isPan) {
+    var wasRightPan = s.panButton === 2;
+    var shouldSuppressContextMenu = wasRightPan && (s.rightPanMoved || s.rightPanStartedTool !== "select");
     s.isPan = false;
+    s.panButton = null;
+    s.rightPanMoved = false;
+    s.rightPanStartedTool = null;
+    if (shouldSuppressContextMenu) s.suppressContextMenuUntil = Date.now() + 700;
     updateCursor();
     return;
   }

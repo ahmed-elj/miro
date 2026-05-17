@@ -1140,6 +1140,7 @@ export function startStickyCreate(wp) {
   ed.style.left = sp.x + 'px'; ed.style.top = sp.y + 'px';
   ed.style.width = Math.max(80, 200) + 'px'; ed.style.height = Math.max(80, 200) + 'px';
   ed.style.backgroundColor = bg; ed.style.fontSize = Math.max(10, 16) + 'px'; ed.style.color = '#1a1a1f';
+  ed.style.textAlign = 'center';
   ed.value = '';
   s.isEditing = true; s.editId = 'new-sticky';
   ed.dataset.wx = wp.x; ed.dataset.wy = wp.y; ed.dataset.bgColor = bg;
@@ -1175,6 +1176,7 @@ export function startEditExisting(obj, caretPoint) {
     ed2.style.backgroundColor = 'transparent';
     ed2.style.fontSize = Math.max(10, obj.fontSize * cam.zoom) + 'px';
     ed2.style.color = '#1a1a1f';
+    ed2.style.textAlign = obj.textAlign || 'center';
     ed2.value = obj.text;
     s.isEditing = true; s.editId = obj.id;
     setTimeout(function() { ed2.focus(); ed2.select(); }, 80);
@@ -1219,8 +1221,8 @@ export function finishEditing() {
 	    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
-    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1, rotation: 0 });
-    se.style.display = 'none'; se.value = '';
+    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, textAlign: 'center', opacity: 1, rotation: 0 });
+    se.style.display = 'none'; se.value = ''; se.style.textAlign = '';
   } else if (typeof s.editId === 'number') {
     var obj = findObj(s.editId);
     if (obj) {
@@ -1228,8 +1230,8 @@ export function finishEditing() {
 	        saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
 	        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
       } else if (obj.type === 'sticky' && se.style.display === 'block') {
-        saveState(); obj.text = se.value || 'Note';
-        se.style.display = 'none'; se.value = '';
+        saveState(); obj.text = se.value || 'Note'; obj.textAlign = obj.textAlign || 'center';
+        se.style.display = 'none'; se.value = ''; se.style.textAlign = '';
       }
     }
   }
@@ -1306,10 +1308,12 @@ export function updateEditorPosition() {
       se.style.width = Math.max(80, sobj.w * cam.zoom) + 'px';
       se.style.height = Math.max(80, sobj.h * cam.zoom) + 'px';
       se.style.fontSize = Math.max(10, sobj.fontSize * cam.zoom) + 'px';
+      se.style.textAlign = sobj.textAlign || 'center';
     } else if (s.editId === 'new-sticky') {
       se.style.width = Math.max(80, (+se.dataset.w || 200 / cam.zoom) * cam.zoom) + 'px';
       se.style.height = Math.max(80, (+se.dataset.h || 200 / cam.zoom) * cam.zoom) + 'px';
       se.style.fontSize = Math.max(10, (+se.dataset.wfs || 16 / cam.zoom) * cam.zoom) + 'px';
+      se.style.textAlign = 'center';
     }
   }
 }

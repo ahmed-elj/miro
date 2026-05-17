@@ -60,6 +60,10 @@ export const state = {
   isPan: false,
   panSt: null,
   panCamSt: null,
+  panButton: null,
+  rightPanMoved: false,
+  rightPanStartedTool: null,
+  suppressContextMenuUntil: 0,
 
   spaceHeld: false,
   toolBefore: null,
