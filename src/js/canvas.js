@@ -7,8 +7,8 @@ import {
 } from './state.js';
 import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
 import { s2w, roundedRect, wrapLine, hexToRgba, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
-import { getSpans } from './editor.js';
 import { getBounds, getGroupBounds, getRotatedBounds, getArrowTangentVector } from './objects.js';
+import { getTextLayout, measureTextLine, textFont } from './textLayout.js';
 
 let rafPending = false;
 export function requestRender() {
@@ -279,46 +279,20 @@ function drawHatchLines(c, o, step, dir) {
 }
 
 function drawText(c, o) {
-  var spans = getSpans(o), rS = Math.max(1, o.fontSize), sc = o.fontSize / rS;
-  var baseW = o.fontWeight || 400;
-  var scaleX = o.scaleX || 1, scaleY = o.scaleY || 1;
+  var layout = getTextLayout(c, o, 'Open Sans');
+  var rS = layout.size, sc = layout.scale, scaleX = layout.scaleX, scaleY = layout.scaleY;
   if (o.fill) {
     var b = getBounds(o);
     if (b) fillShape(c, o, function() { c.rect(b.x, b.y, b.w, b.h); });
   }
   c.save(); c.translate(o.x, o.y); c.scale(sc * scaleX, sc * scaleY); c.textBaseline = 'middle';
-  var lines = [[]];
-  spans.forEach(function(s) {
-    var pts = s.text.split('\n');
-    pts.forEach(function(p, i) {
-      if (i > 0) lines.push([]);
-      if (p) lines[lines.length - 1].push({ text: p, bold: s.bold, italic: s.italic, underline: s.underline, color: s.color });
-    });
-  });
-  function spanFont(s) {
-    var w = s.bold ? '700' : String(baseW);
-    return (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Open Sans';
-  }
-  // Measure max width for horizontal centering
-  var lh = rS * 1.4;
-  var maxW = 0;
-  lines.forEach(function(line) {
-    var lw = 0;
+  var align = o.textAlign || 'center';
+  var cy = -layout.totalHeight / 2 + layout.lineHeight / 2;
+  layout.lines.forEach(function(line) {
+    var lw = measureTextLine(c, line, layout);
+    var cx = align === 'left' ? -layout.maxW / 2 : align === 'right' ? layout.maxW / 2 - lw : -lw / 2;
     line.forEach(function(s) {
-      c.font = spanFont(s);
-      lw += c.measureText(s.text).width;
-    });
-    if (lw > maxW) maxW = lw;
-  });
-  // Draw text: horizontally and vertically centered within bounds
-  var totalH = lines.length * lh;
-  var cy = -totalH / 2 + lh / 2;
-  lines.forEach(function(line) {
-    var lw = 0;
-    line.forEach(function(s) { c.font = spanFont(s); lw += c.measureText(s.text).width; });
-    var cx = -lw / 2;
-    line.forEach(function(s) {
-      c.font = spanFont(s);
+      c.font = textFont(s, layout.baseWeight, layout.size, layout.family);
       c.fillStyle = s.color;
       c.fillText(s.text, cx, cy);
       if (s.underline) {
@@ -332,7 +306,7 @@ function drawText(c, o) {
       }
       cx += c.measureText(s.text).width;
     });
-    cy += lh;
+    cy += layout.lineHeight;
   });
   c.restore();
 }
@@ -434,6 +408,26 @@ function drawPreview(c) {
   c.restore();
 }
 
+function getResizeHandlePoints(b) {
+  return [
+    { x: b.x, y: b.y },
+    { x: b.x + b.w / 2, y: b.y },
+    { x: b.x + b.w, y: b.y },
+    { x: b.x + b.w, y: b.y + b.h / 2 },
+    { x: b.x + b.w, y: b.y + b.h },
+    { x: b.x + b.w / 2, y: b.y + b.h },
+    { x: b.x, y: b.y + b.h },
+    { x: b.x, y: b.y + b.h / 2 },
+  ];
+}
+
+function drawResizeHandles(c, b, hs, iz, accent) {
+  getResizeHandlePoints(b).forEach(function(p) {
+    c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+    c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
+  });
+}
+
 function drawHandles(c) {
   var s = state;
   var accent = s.settings.accentColor;
@@ -490,10 +484,7 @@ function drawHandles(c) {
   c.strokeStyle = accent; c.lineWidth = 1.5 * iz;
   c.setLineDash([6 * iz, 4 * iz]); c.strokeRect(b.x, b.y, b.w, b.h); c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
-  [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y }, { x: b.x, y: b.y + b.h }, { x: b.x + b.w, y: b.y + b.h }].forEach(function(p) {
-    c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
-    c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
-  });
+  drawResizeHandles(c, b, hs, iz, accent);
   // Rotation gizmo: line from top-center to rotation handle circle
   var tcx = b.x + b.w / 2, tcy = b.y;
   var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;
@@ -618,10 +609,7 @@ function drawGroupHandles(c) {
   c.strokeRect(gb.x, gb.y, gb.w, gb.h);
   c.setLineDash([]);
   var hs = HANDLE_SIZE * iz;
-  [{ x: gb.x, y: gb.y }, { x: gb.x + gb.w, y: gb.y }, { x: gb.x, y: gb.y + gb.h }, { x: gb.x + gb.w, y: gb.y + gb.h }].forEach(function(p) {
-    c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
-    c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
-  });
+  drawResizeHandles(c, gb, hs, iz, accent);
   // Rotation gizmo: line from top-center to rotation handle circle
   var tcx = gb.x + gb.w / 2, tcy = gb.y;
   var rhx = tcx, rhy = tcy - ROTATE_HANDLE_DIST * iz;

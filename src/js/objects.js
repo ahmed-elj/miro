@@ -5,7 +5,7 @@
 import { cam, objects } from './state.js';
 import { HANDLE_HIT, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
 import { ptSegDist, getArrowCurvePoints, getArrowBendHandle, getArrowCurvePoint, getArrowControlPoint } from './utils.js';
-import { getSpans } from './editor.js';
+import { getTextLayout } from './textLayout.js';
 
 var textMeasureCanvas = document.createElement('canvas');
 var textMeasureCtx = textMeasureCanvas.getContext('2d');
@@ -61,29 +61,10 @@ export function getBounds(obj) {
     case 'image':
       return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
   case 'text': {
-  var spans = getSpans(obj), rS = Math.max(1, obj.fontSize), sc = obj.fontSize / rS;
-  var baseW = obj.fontWeight || 400;
   var tc = textMeasureCtx;
-  var lines = [[]];
-  spans.forEach(function(s) {
-    var pts = s.text.split('\n');
-    pts.forEach(function(pt, i) {
-      if (i > 0) lines.push([]);
-      if (pt) lines[lines.length - 1].push({ text: pt, bold: s.bold, italic: s.italic, color: s.color });
-    });
-  });
-  var maxW = 0;
-  lines.forEach(function(line) {
-    var lw = 0;
-    line.forEach(function(s) {
-      var w = s.bold ? '700' : String(baseW);
-      tc.font = (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Open Sans';
-      lw += tc.measureText(s.text).width;
-    });
-    maxW = Math.max(maxW, lw);
-  });
-  var scaleX = obj.scaleX || 1, scaleY = obj.scaleY || 1;
-  var w = (maxW * sc || 1) * scaleX, h = (lines.length * rS * 1.4 * sc || obj.fontSize) * scaleY;
+  var layout = getTextLayout(tc, obj, 'Open Sans');
+  var w = (layout.maxW * layout.scale || 1) * layout.scaleX;
+  var h = (layout.totalHeight * layout.scale || obj.fontSize) * layout.scaleY;
   return { x: obj.x - w / 2, y: obj.y - h / 2, w: w, h: h };
 }
   }
@@ -312,9 +293,13 @@ export function hitHandle(obj, wx, wy) {
   var hs = HANDLE_HIT / cam.zoom;
   var cs = [
     { k: 'resize-tl', x: b.x, y: b.y },
+    { k: 'resize-t', x: b.x + b.w / 2, y: b.y },
     { k: 'resize-tr', x: b.x + b.w, y: b.y },
+    { k: 'resize-r', x: b.x + b.w, y: b.y + b.h / 2 },
     { k: 'resize-bl', x: b.x, y: b.y + b.h },
+    { k: 'resize-b', x: b.x + b.w / 2, y: b.y + b.h },
     { k: 'resize-br', x: b.x + b.w, y: b.y + b.h },
+    { k: 'resize-l', x: b.x, y: b.y + b.h / 2 },
   ];
   var best = null;
   var bestDist = Infinity;

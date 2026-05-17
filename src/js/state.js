@@ -80,6 +80,7 @@ export const state = {
   clipboardObjects: [],
   contextPastePoint: null,
   lastPointerWorld: null,
+  pendingInternalPaste: false,
 
   settings: {
     theme: DEFAULT_SETTINGS.theme,

@@ -81,3 +81,34 @@ export function parseHtmlSpans(el, defColor) {
   });
   return merged;
 }
+
+function linePrefix(mode, idx) {
+  return mode === 'number' ? (idx + 1) + '. ' : '• ';
+}
+
+function stripListPrefix(text) {
+  return text.replace(/^(\s*)(?:[•\-*]\s+|\d+[.)]\s+)/, '$1');
+}
+
+export function listifyPlainText(text, mode) {
+  var idx = 0;
+  return text.split('\n').map(function(line) {
+    if (!line.trim()) return line;
+    var indent = (line.match(/^\s*/) || [''])[0];
+    var body = stripListPrefix(line).slice(indent.length);
+    return indent + linePrefix(mode, idx++) + body;
+  }).join('\n');
+}
+
+export function listifySpans(spans, mode) {
+  var plain = spans.map(function(sp) { return sp.text; }).join('');
+  var listed = listifyPlainText(plain, mode);
+  var base = spans[0] || {};
+  return [{
+    text: listed,
+    bold: !!base.bold,
+    italic: !!base.italic,
+    underline: !!base.underline,
+    color: base.color || '#e4e4e8',
+  }];
+}

@@ -478,9 +478,13 @@ export function hitHandleBounds(b, wx, wy) {
   var hs = HANDLE_HIT / cam.zoom;
   var cs = [
     { k: 'resize-tl', x: b.x, y: b.y },
+    { k: 'resize-t', x: b.x + b.w / 2, y: b.y },
     { k: 'resize-tr', x: b.x + b.w, y: b.y },
+    { k: 'resize-r', x: b.x + b.w, y: b.y + b.h / 2 },
     { k: 'resize-bl', x: b.x, y: b.y + b.h },
+    { k: 'resize-b', x: b.x + b.w / 2, y: b.y + b.h },
     { k: 'resize-br', x: b.x + b.w, y: b.y + b.h },
+    { k: 'resize-l', x: b.x, y: b.y + b.h / 2 },
   ];
   var best = null;
   var bestDist = Infinity;
@@ -567,6 +571,43 @@ function constrainLineEndpoint(anchor, snapMoving, rawMoving) {
   var rx = rawMoving.x - anchor.x, ry = rawMoving.y - anchor.y;
   var scale = Math.max(0.05, (rx * vx + ry * vy) / len2);
   return { x: anchor.x + vx * scale, y: anchor.y + vy * scale };
+}
+
+function getResizeGeometry(b, dm, dx, dy) {
+  var anchorX = b.x;
+  var anchorY = b.y;
+  var newW = b.w;
+  var newH = b.h;
+  if (dm === 'resize-br') {
+    anchorX = b.x; anchorY = b.y;
+    newW = b.w + dx; newH = b.h + dy;
+  } else if (dm === 'resize-bl') {
+    anchorX = b.x + b.w; anchorY = b.y;
+    newW = b.w - dx; newH = b.h + dy;
+  } else if (dm === 'resize-tr') {
+    anchorX = b.x; anchorY = b.y + b.h;
+    newW = b.w + dx; newH = b.h - dy;
+  } else if (dm === 'resize-tl') {
+    anchorX = b.x + b.w; anchorY = b.y + b.h;
+    newW = b.w - dx; newH = b.h - dy;
+  } else if (dm === 'resize-r') {
+    anchorX = b.x; anchorY = b.y + b.h / 2;
+    newW = b.w + dx; newH = b.h;
+  } else if (dm === 'resize-l') {
+    anchorX = b.x + b.w; anchorY = b.y + b.h / 2;
+    newW = b.w - dx; newH = b.h;
+  } else if (dm === 'resize-b') {
+    anchorX = b.x + b.w / 2; anchorY = b.y;
+    newW = b.w; newH = b.h + dy;
+  } else if (dm === 'resize-t') {
+    anchorX = b.x + b.w / 2; anchorY = b.y + b.h;
+    newW = b.w; newH = b.h - dy;
+  }
+  return { anchorX: anchorX, anchorY: anchorY, newW: newW, newH: newH };
+}
+
+function isSideResizeMode(dm) {
+  return dm === 'resize-t' || dm === 'resize-r' || dm === 'resize-b' || dm === 'resize-l';
 }
 
 // ── Drag handling ──
@@ -659,24 +700,12 @@ export function handleDrag(wp, freeResize) {
     var snapGb = getGroupBoundsFromSnaps(s.multiDragSnaps, snapIds);
     if (!snapGb || snapGb.w < 0.01 || snapGb.h < 0.01) return;
 
-    var anchorX, anchorY, newW, newH;
     var dm = s.dragMode;
-    if (dm === 'resize-br') {
-      anchorX = snapGb.x; anchorY = snapGb.y;
-      newW = snapGb.w + dx; newH = snapGb.h + dy;
-    } else if (dm === 'resize-bl') {
-      anchorX = snapGb.x + snapGb.w; anchorY = snapGb.y;
-      newW = snapGb.w - dx; newH = snapGb.h + dy;
-    } else if (dm === 'resize-tr') {
-      anchorX = snapGb.x; anchorY = snapGb.y + snapGb.h;
-      newW = snapGb.w + dx; newH = snapGb.h - dy;
-    } else {
-      anchorX = snapGb.x + snapGb.w; anchorY = snapGb.y + snapGb.h;
-      newW = snapGb.w - dx; newH = snapGb.h - dy;
-    }
-    var sx = Math.max(0.05, newW / snapGb.w);
-    var sy = Math.max(0.05, newH / snapGb.h);
-    if (preserveAspect) {
+    var geom = getResizeGeometry(snapGb, dm, dx, dy);
+    var anchorX = geom.anchorX, anchorY = geom.anchorY;
+    var sx = Math.max(0.05, geom.newW / snapGb.w);
+    var sy = Math.max(0.05, geom.newH / snapGb.h);
+    if (preserveAspect && !isSideResizeMode(dm)) {
       var constrained = constrainResizeScales(snapGb.w, snapGb.h, sx, sy, 0.05);
       sx = constrained.sx;
       sy = constrained.sy;
@@ -765,6 +794,16 @@ export function handleDrag(wp, freeResize) {
     } else if (obj2.type === 'text') {
       applyTextResize(obj2, snap2, dx, dy, preserveAspect);
     } else if (obj2.type === 'line' || obj2.type === 'arrow') {
+      if (isSideResizeMode(s.dragMode)) {
+        var lineBounds = getBounds(snap2);
+        if (!lineBounds || lineBounds.w < 0.01 || lineBounds.h < 0.01) return;
+        var lineGeom = getResizeGeometry(lineBounds, s.dragMode, dx, dy);
+        var lineSx = Math.max(0.05, lineGeom.newW / lineBounds.w);
+        var lineSy = Math.max(0.05, lineGeom.newH / lineBounds.h);
+        scaleObjectTo(obj2, snap2, lineGeom.anchorX, lineGeom.anchorY, lineSx, lineSy);
+        requestRender();
+        return;
+      }
       var lineAnchor = null;
       var lineMoving = null;
       if (s.dragMode === 'resize-br' || s.dragMode === 'resize-tr') {
@@ -805,13 +844,11 @@ export function handleDrag(wp, freeResize) {
     } else if (obj2.type === 'path') {
       var b = getBounds(snap2);
       if (!b || b.w < 0.01 || b.h < 0.01) return;
-      var ox, oy, sx2, sy2;
-      if (s.dragMode === 'resize-br') { ox = b.x; oy = b.y; sx2 = (b.w + dx) / b.w; sy2 = (b.h + dy) / b.h; }
-      else if (s.dragMode === 'resize-bl') { ox = b.x + b.w; oy = b.y; sx2 = (b.w - dx) / b.w; sy2 = (b.h + dy) / b.h; }
-      else if (s.dragMode === 'resize-tr') { ox = b.x; oy = b.y + b.h; sx2 = (b.w + dx) / b.w; sy2 = (b.h - dy) / b.h; }
-      else { ox = b.x + b.w; oy = b.y + b.h; sx2 = (b.w - dx) / b.w; sy2 = (b.h - dy) / b.h; }
+      var pathGeom = getResizeGeometry(b, s.dragMode, dx, dy);
+      var ox = pathGeom.anchorX, oy = pathGeom.anchorY;
+      var sx2 = pathGeom.newW / b.w, sy2 = pathGeom.newH / b.h;
       sx2 = Math.max(0.05, sx2); sy2 = Math.max(0.05, sy2);
-      if (preserveAspect) {
+      if (preserveAspect && !isSideResizeMode(s.dragMode)) {
         var pc = constrainResizeScales(b.w, b.h, sx2, sy2, 0.05);
         sx2 = pc.sx;
         sy2 = pc.sy;
@@ -841,6 +878,20 @@ function applyResize(o, snap, dx, dy, ms, preserveAspect) {
     nw = Math.max(ms, snap.w - dx); nh = Math.max(ms, snap.h - dy);
     size = preserveAspect ? getAspectResizeSize(snap.w, snap.h, nw, nh, ms) : { w: nw, h: nh };
     o.x = snap.x + snap.w - size.w; o.y = snap.y + snap.h - size.h; o.w = size.w; o.h = size.h;
+  } else if (dm === 'resize-r') {
+    o.w = Math.max(ms, snap.w + dx);
+    o.h = snap.h;
+  } else if (dm === 'resize-l') {
+    o.w = Math.max(ms, snap.w - dx);
+    o.x = snap.x + snap.w - o.w;
+    o.h = snap.h;
+  } else if (dm === 'resize-b') {
+    o.w = snap.w;
+    o.h = Math.max(ms, snap.h + dy);
+  } else if (dm === 'resize-t') {
+    o.w = snap.w;
+    o.h = Math.max(ms, snap.h - dy);
+    o.y = snap.y + snap.h - o.h;
   }
 }
 
@@ -860,6 +911,39 @@ function applyTextResize(obj, snap, dx, dy, preserveAspect) {
     return;
   }
   var dm = state.dragMode;
+  if (isSideResizeMode(dm)) {
+    var left = ob.x, right = ob.x + ob.w, top = ob.y, bottom = ob.y + ob.h;
+    if (dm === 'resize-r') right += dx;
+    else if (dm === 'resize-l') left += dx;
+    else if (dm === 'resize-b') bottom += dy;
+    else if (dm === 'resize-t') top += dy;
+    var sideScaleX = Math.max(0.1, Math.abs(right - left) / ob.w);
+    var sideScaleY = Math.max(0.1, Math.abs(bottom - top) / ob.h);
+    obj.fontSize = snap.fontSize;
+    if (snap.wrapText) {
+      obj.wrapText = true;
+      obj.wrapWidth = Math.max(40 / cam.zoom, (snap.wrapWidth || ob.w) * sideScaleX);
+      obj.scaleX = snap.scaleX || 1;
+      obj.scaleY = (snap.scaleY || 1) * sideScaleY;
+    } else {
+      obj.scaleX = (snap.scaleX || 1) * sideScaleX;
+      obj.scaleY = (snap.scaleY || 1) * sideScaleY;
+    }
+    var sideCenterX = (left + right) / 2;
+    var sideCenterY = (top + bottom) / 2;
+    if (snap.rotation || 0) {
+      var sideSnapBounds = getBounds(snap);
+      var sideSnapCx = sideSnapBounds.x + sideSnapBounds.w / 2;
+      var sideSnapCy = sideSnapBounds.y + sideSnapBounds.h / 2;
+      var sideRotatedCenter = rotateAroundPoint(sideCenterX, sideCenterY, sideSnapCx, sideSnapCy, snap.rotation || 0);
+      obj.x = sideRotatedCenter.x;
+      obj.y = sideRotatedCenter.y;
+    } else {
+      obj.x = sideCenterX;
+      obj.y = sideCenterY;
+    }
+    return;
+  }
   var ax, ay, cx, cy;
   if (dm === 'resize-br') {
     ax = ob.x; ay = ob.y; cx = ob.x + ob.w + dx; cy = ob.y + ob.h + dy;
@@ -880,8 +964,15 @@ function applyTextResize(obj, snap, dx, dy, preserveAspect) {
     cy = ay + (cy >= ay ? ob.h * textScaleY : -ob.h * textScaleY);
   }
   obj.fontSize = snap.fontSize;
-  obj.scaleX = (snap.scaleX || 1) * textScaleX;
-  obj.scaleY = (snap.scaleY || 1) * textScaleY;
+  if (snap.wrapText) {
+    obj.wrapText = true;
+    obj.wrapWidth = Math.max(40 / cam.zoom, (snap.wrapWidth || ob.w) * textScaleX);
+    obj.scaleX = snap.scaleX || 1;
+    obj.scaleY = (snap.scaleY || 1) * textScaleY;
+  } else {
+    obj.scaleX = (snap.scaleX || 1) * textScaleX;
+    obj.scaleY = (snap.scaleY || 1) * textScaleY;
+  }
   var localCenterX = (ax + cx) / 2;
   var localCenterY = (ay + cy) / 2;
   if (snap.rotation || 0) {
@@ -1090,15 +1181,10 @@ export function startEditExisting(obj, caretPoint) {
   if (obj.type === 'text') {
     var ed = document.getElementById('textEditor');
     var tsp = w2s(obj.x, obj.y);
-    ed.style.display = 'block';
-    ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
-    ed.style.transform = getTextEditorTransform(obj);
-    ed.style.transformOrigin = 'center center';
-    ed.style.minWidth = '0';
-    ed.style.color = obj.color || '#e4e4e8';
-    ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
-    ed.style.fontWeight = '400'; ed.style.fontStyle = 'normal'; ed.style.textDecoration = 'none';
-    ed.innerHTML = spansToHtml(getSpans(obj));
+	    ed.style.display = 'block';
+	    ed.style.left = tsp.x + 'px'; ed.style.top = tsp.y + 'px';
+	    applyTextEditorObjectStyles(ed, obj);
+	    ed.innerHTML = spansToHtml(getSpans(obj));
     s.isEditing = true; s.editId = obj.id;
     setTimeout(function() {
       ed.focus();
@@ -1154,8 +1240,8 @@ export function finishEditing() {
   if (s.editId === 'new-text' && teVisible) {
     var spans = parseHtmlSpans(te, te.dataset.color || s.curColor);
     var text = spans.map(function(sp) { return sp.text; }).join('').trim();
-    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, scaleX: 1, scaleY: 1, color: te.dataset.color || s.curColor, opacity: 1, rotation: 0 });
-    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = '';
+	    if (text) addObj({ type: 'text', id: gid(), x: +te.dataset.wx, y: +te.dataset.wy, spans: spans, fontSize: +te.dataset.wfs, scaleX: 1, scaleY: 1, color: te.dataset.color || s.curColor, textAlign: 'center', wrapText: false, opacity: 1, rotation: 0 });
+	    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
     addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, opacity: 1, rotation: 0 });
@@ -1164,8 +1250,8 @@ export function finishEditing() {
     var obj = findObj(s.editId);
     if (obj) {
       if (obj.type === 'text' && teVisible) {
-        saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
-        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = '';
+	        saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
+	        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
       } else if (obj.type === 'sticky' && se.style.display === 'block') {
         saveState(); obj.text = se.value || 'Note';
         se.style.display = 'none'; se.value = '';
@@ -1178,14 +1264,34 @@ export function finishEditing() {
 
 export function updateEditorFS(obj) {
   var ed = document.getElementById('textEditor');
-  ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
+  applyTextEditorObjectStyles(ed, obj);
 }
 
 function getTextEditorTransform(obj) {
   var rot = obj.rotation || 0;
-  var sx = obj.scaleX || 1;
   var sy = obj.scaleY || 1;
-  return 'translate(-50%, -50%) rotate(' + rot + 'rad) scale(' + sx + ', ' + sy + ') translateY(-0.08em)';
+  return 'translate(-50%, -50%) rotate(' + rot + 'rad) scale(1, ' + sy + ') translateY(-0.08em)';
+}
+
+function applyTextEditorObjectStyles(ed, obj) {
+  var sx = obj.scaleX || 1;
+  ed.style.transform = getTextEditorTransform(obj);
+  ed.style.transformOrigin = 'center center';
+  ed.style.color = obj.color || '#e4e4e8';
+  ed.style.fontSize = obj.fontSize * cam.zoom + 'px';
+  ed.style.fontWeight = obj.fontWeight || '400';
+  ed.style.fontStyle = 'normal';
+  ed.style.textDecoration = 'none';
+  ed.style.textAlign = obj.textAlign || 'center';
+  ed.style.whiteSpace = obj.wrapText ? 'pre-wrap' : 'pre';
+  ed.style.overflowWrap = obj.wrapText ? 'break-word' : 'normal';
+  ed.style.wordBreak = obj.wrapText ? 'break-word' : 'normal';
+  ed.style.minWidth = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : '0';
+  ed.style.width = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : 'auto';
+  ed.style.maxWidth = obj.wrapText && obj.wrapWidth ? Math.max(40, obj.wrapWidth * cam.zoom) + 'px' : 'none';
+  if (!obj.wrapText && sx !== 1) {
+    ed.style.letterSpacing = '0';
+  }
 }
 
 // ── Keep editor overlay in sync with camera ──
@@ -1194,25 +1300,26 @@ export function updateEditorPosition() {
   if (!s.isEditing) return;
   var te = document.getElementById('textEditor');
   var se = document.getElementById('stickyEditor');
-  if (te.style.display !== 'none' && te.style.display !== '') {
+	  if (te.style.display !== 'none' && te.style.display !== '') {
     var wx = +te.dataset.wx, wy = +te.dataset.wy;
     var obj = typeof s.editId === 'number' ? findObj(s.editId) : null;
     if (obj) { wx = obj.x; wy = obj.y; }
     var sp = w2s(wx, wy);
-    te.style.left = sp.x + 'px';
-    te.style.top = sp.y + 'px';
-    te.style.transform = 'translate(-50%, -50%)';
-    if (obj && obj.type === 'text') {
-      te.style.fontSize = obj.fontSize * cam.zoom + 'px';
-      te.style.transform = getTextEditorTransform(obj);
-      te.style.transformOrigin = 'center center';
-      te.style.minWidth = '0';
-    } else if (s.editId === 'new-text') {
-      te.style.fontSize = (+te.dataset.wfs || 20 / cam.zoom) * cam.zoom + 'px';
-      te.style.transformOrigin = 'center center';
-      te.style.minWidth = '60px';
-    }
-  }
+	    te.style.left = sp.x + 'px';
+	    te.style.top = sp.y + 'px';
+	    if (obj && obj.type === 'text') {
+	      applyTextEditorObjectStyles(te, obj);
+	    } else if (s.editId === 'new-text') {
+	      te.style.fontSize = (+te.dataset.wfs || 20 / cam.zoom) * cam.zoom + 'px';
+	      te.style.transform = 'translate(-50%, -50%)';
+	      te.style.transformOrigin = 'center center';
+	      te.style.minWidth = '60px';
+	      te.style.width = 'auto';
+	      te.style.maxWidth = 'none';
+	      te.style.whiteSpace = 'pre-wrap';
+	      te.style.textAlign = 'center';
+	    }
+	  }
   if (se.style.display === 'block') {
     var swx = +se.dataset.wx, swy = +se.dataset.wy;
     var sobj = typeof s.editId === 'number' ? findObj(s.editId) : null;

@@ -18,9 +18,10 @@ import {
 import { s2w, w2s, showToast, getArrowHeadMode } from "./utils.js";
 import { requestRender } from "./canvas.js";
 import { getBounds, getRotatedBounds, hitTest, hitBorder } from "./objects.js";
-import { getSpans } from "./editor.js";
+import { getSpans, listifyPlainText, listifySpans } from "./editor.js";
 import {
   saveState,
+  addObj,
   undo,
   redo,
   findObj,
@@ -535,6 +536,10 @@ function updatePopup() {
         return sp.underline;
       }),
     );
+    document.getElementById("popAlignLeft").classList.toggle("active", (selObj.textAlign || "center") === "left");
+    document.getElementById("popAlignCenter").classList.toggle("active", (selObj.textAlign || "center") === "center");
+    document.getElementById("popAlignRight").classList.toggle("active", (selObj.textAlign || "center") === "right");
+    document.getElementById("popWrapText").classList.toggle("active", !!selObj.wrapText);
     document.getElementById("popFontSize").textContent = Math.round(
       selObj.fontSize * cam.zoom,
     );
@@ -792,6 +797,91 @@ function pasteClipboard(atWorld) {
   requestRender();
   showToast("Pasted");
   return true;
+}
+
+function getPastePoint() {
+  return state.lastPointerWorld || s2w(window.innerWidth / 2, window.innerHeight / 2);
+}
+
+function pasteTextFromOS(text) {
+  var clean = (text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\s+$/g, "");
+  if (!clean) return false;
+  var wp = getPastePoint();
+  var color = state.curColor || getDefaultObjectColor();
+  var lines = clean.split("\n");
+  var longest = lines.reduce(function (max, line) { return Math.max(max, line.length); }, 0);
+  var wrapText = longest > 80 || lines.length > 8;
+  addObj({
+    type: "text",
+    id: gid(),
+    x: wp.x,
+    y: wp.y,
+    spans: markdownToSpans(clean, color),
+    fontSize: 20 / cam.zoom,
+    scaleX: 1,
+    scaleY: 1,
+    color: color,
+    textAlign: "left",
+    wrapText: wrapText,
+    wrapWidth: wrapText ? 560 / cam.zoom : null,
+    opacity: 1,
+    rotation: 0,
+  });
+  showToast("Text pasted");
+  return true;
+}
+
+function pushMarkdownSpan(out, text, style, color) {
+  if (!text) return;
+  out.push({
+    text: text,
+    bold: !!style.bold,
+    italic: !!style.italic,
+    underline: !!style.underline,
+    color: color,
+  });
+}
+
+function parseInlineMarkdown(text, color) {
+  var out = [];
+  var style = { bold: false, italic: false, underline: false };
+  var buf = "";
+  for (var i = 0; i < text.length; i++) {
+    var two = text.slice(i, i + 2);
+    if (two === "**") {
+      pushMarkdownSpan(out, buf, style, color); buf = ""; style.bold = !style.bold; i++; continue;
+    }
+    if (two === "__") {
+      pushMarkdownSpan(out, buf, style, color); buf = ""; style.underline = !style.underline; i++; continue;
+    }
+    if (text[i] === "*" && text[i + 1] !== " ") {
+      pushMarkdownSpan(out, buf, style, color); buf = ""; style.italic = !style.italic; continue;
+    }
+    buf += text[i];
+  }
+  pushMarkdownSpan(out, buf, style, color);
+  return out;
+}
+
+function markdownToSpans(text, color) {
+  var spans = [];
+  text.split("\n").forEach(function (line, idx) {
+    if (idx > 0) spans.push({ text: "\n", bold: false, italic: false, underline: false, color: color });
+    var processed = line;
+    var stylePrefix = { bold: false, italic: false, underline: false };
+    var heading = processed.match(/^(\s*)#{1,6}\s+(.*)$/);
+    if (heading) {
+      processed = heading[1] + heading[2];
+      stylePrefix.bold = true;
+    }
+    var bullet = processed.match(/^(\s*)[-*]\s+(.*)$/);
+    if (bullet) processed = bullet[1] + "• " + bullet[2];
+    parseInlineMarkdown(processed, color).forEach(function (span) {
+      span.bold = span.bold || stylePrefix.bold;
+      spans.push(span);
+    });
+  });
+  return spans;
 }
 
 function setSelectionColor(c) {
@@ -1152,6 +1242,50 @@ function setupPopupHandlers() {
     } else o.underline = !o.underline;
     requestRender();
   });
+  function setTextAlign(align) {
+    var o = findObj(s.selectedId);
+    if (!o || o.type !== "text") return;
+    saveState();
+    o.textAlign = align;
+    requestRender();
+  }
+  document.getElementById("popAlignLeft").addEventListener("click", function () { setTextAlign("left"); });
+  document.getElementById("popAlignCenter").addEventListener("click", function () { setTextAlign("center"); });
+  document.getElementById("popAlignRight").addEventListener("click", function () { setTextAlign("right"); });
+  document.getElementById("popWrapText").addEventListener("click", function () {
+    var o = findObj(s.selectedId);
+    if (!o || o.type !== "text") return;
+    saveState();
+    o.wrapText = !o.wrapText;
+    if (o.wrapText && !o.wrapWidth) {
+      var b = getBounds(o);
+      o.wrapWidth = b ? Math.max(160 / cam.zoom, b.w) : 420 / cam.zoom;
+    }
+    requestRender();
+  });
+  function applyListMode(mode) {
+    if (isTextEdit()) {
+      var ed = document.getElementById("textEditor");
+      ed.focus();
+      var sel = window.getSelection();
+      var selectedText = sel && sel.rangeCount ? sel.toString() : "";
+      if (selectedText) {
+        document.execCommand("insertText", false, listifyPlainText(selectedText, mode));
+      } else {
+        ed.textContent = listifyPlainText(ed.innerText || ed.textContent || "", mode);
+      }
+      requestRender();
+      return;
+    }
+    var o = findObj(s.selectedId);
+    if (!o || o.type !== "text") return;
+    saveState();
+    o.spans = listifySpans(getSpans(o), mode);
+    o.textAlign = o.textAlign || "left";
+    requestRender();
+  }
+  document.getElementById("popBulletList").addEventListener("click", function () { applyListMode("bullet"); });
+  document.getElementById("popNumberList").addEventListener("click", function () { applyListMode("number"); });
   document.getElementById("popSizeDn").addEventListener("click", function () {
     if (isTextEdit()) {
       var o = typeof s.editId === "number" ? findObj(s.editId) : null;
@@ -2064,17 +2198,28 @@ function setupPointerEvents() {
     }
   });
   window.addEventListener("paste", function (e) {
+    state.pendingInternalPaste = false;
     if (s.isEditing || s.isPan || e.pointerType || !e.clipboardData) return;
     var items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
     for (var i = 0; i < items.length; i++) {
       if (items[i].type.startsWith("image/")) {
+        e.preventDefault();
         insertImg(
           items[i].getAsFile(),
-          s2w(window.innerWidth / 2, window.innerHeight / 2),
+          getPastePoint(),
         );
-        break;
+        return;
       }
+    }
+    var text = e.clipboardData.getData("text/plain");
+    if (text && pasteTextFromOS(text)) {
+      e.preventDefault();
+      return;
+    }
+    if (state.pendingInternalPaste && state.clipboardObjects && state.clipboardObjects.length) {
+      e.preventDefault();
+      pasteClipboard(getPastePoint());
     }
   });
   canvas.addEventListener("contextmenu", function (e) {
@@ -2305,8 +2450,13 @@ function setupKeyboard() {
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-      if (pasteClipboard(state.lastPointerWorld)) e.preventDefault();
-      return;
+      state.pendingInternalPaste = true;
+      setTimeout(function () {
+        if (state.pendingInternalPaste) {
+          pasteClipboard(getPastePoint());
+          state.pendingInternalPaste = false;
+        }
+      }, 80);
     }
     if (
       (e.key === "Delete" || e.key === "Backspace") &&
