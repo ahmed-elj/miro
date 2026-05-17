@@ -244,60 +244,103 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function positionPopupNearBounds(pop, b, estimatedHeight) {
+function rectsOverlap(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+function rectDistance(a, b) {
+  var dx = Math.max(0, b.left - a.right, a.left - b.right);
+  var dy = Math.max(0, b.top - a.bottom, a.top - b.bottom);
+  return Math.hypot(dx, dy);
+}
+
+function inflateRect(r, amount) {
+  if (!r) return null;
+  return {
+    left: r.left - amount,
+    top: r.top - amount,
+    right: r.right + amount,
+    bottom: r.bottom + amount,
+  };
+}
+
+function candidateRect(left, top, w, h) {
+  return { left: left, top: top, right: left + w, bottom: top + h };
+}
+
+function getCaretRect(container) {
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  var range = sel.getRangeAt(0);
+  if (!container.contains(range.startContainer)) return null;
+  var probe = range.cloneRange();
+  probe.collapse(true);
+  var rect = probe.getBoundingClientRect();
+  if ((!rect || (!rect.width && !rect.height)) && probe.getClientRects().length) {
+    rect = probe.getClientRects()[0];
+  }
+  if (!rect) return null;
+  var x = rect.left || rect.right;
+  var y = rect.top || rect.bottom;
+  return {
+    left: x - 8,
+    top: y - 12,
+    right: x + Math.max(8, rect.width || 8),
+    bottom: y + Math.max(18, rect.height || 18),
+  };
+}
+
+function positionPopupNearScreenRect(pop, rect, estimatedHeight, avoidRect, topGap) {
   var margin = 10;
   var pW = pop.offsetWidth || 380;
   var pH = pop.offsetHeight || estimatedHeight || 140;
-  var topbar = document.getElementById("topbar");
-  var bottombar = document.getElementById("bottombar");
-  var safeTop = margin;
-  var safeBottom = window.innerHeight - margin;
-  if (topbar) {
-    var topRect = topbar.getBoundingClientRect();
-    safeTop = Math.max(safeTop, topRect.bottom + margin);
-  }
-  if (bottombar) {
-    var bottomRect = bottombar.getBoundingClientRect();
-    safeBottom = Math.min(safeBottom, bottomRect.top - margin);
-  }
+  var safe = getPopupSafeArea();
+  var safeTop = safe.top;
+  var safeBottom = safe.bottom;
+  var maxLeft = window.innerWidth - pW - margin;
+  var maxTop = safeBottom - pH;
+  var gap = 12;
+  var avoid = inflateRect(avoidRect, 28);
+  var cx = (rect.left + rect.right) / 2;
+  var cy = (rect.top + rect.bottom) / 2;
+  var raw = [
+    { side: "top", left: cx - pW / 2, top: rect.top - pH - (topGap || gap) },
+    { side: "bottom", left: cx - pW / 2, top: rect.bottom + gap },
+    { side: "right", left: rect.right + gap, top: cy - pH / 2 },
+    { side: "left", left: rect.left - pW - gap, top: cy - pH / 2 },
+  ];
+  var candidates = raw.map(function(c) {
+    var cl = clamp(c.left, margin, maxLeft);
+    var ct = clamp(c.top, safeTop, maxTop);
+    var r = candidateRect(cl, ct, pW, pH);
+    var fits = c.left >= margin && c.left <= maxLeft && c.top >= safeTop && c.top <= maxTop;
+    var nearCaret = avoid && rectsOverlap(r, avoid);
+    var overlapsObject = rectsOverlap(r, rect);
+    var score =
+      (fits ? 100000 : 0) +
+      (!overlapsObject ? 20000 : 0) +
+      (!nearCaret ? 50000 : -50000) +
+      rectDistance(r, rect) +
+      (avoidRect ? rectDistance(r, avoidRect) : 0);
+    return { rect: r, score: score, nearCaret: nearCaret };
+  });
+  var usable = avoid ? candidates.filter(function(c) { return !c.nearCaret; }) : candidates;
+  if (!usable.length) usable = candidates.sort(function(a, b) {
+    return rectDistance(b.rect, avoidRect) - rectDistance(a.rect, avoidRect);
+  }).slice(0, 1);
+  usable.sort(function(a, b) { return b.score - a.score; });
+  pop.style.left = usable[0].rect.left + "px";
+  pop.style.top = usable[0].rect.top + "px";
+}
+
+function positionPopupNearBounds(pop, b, estimatedHeight) {
   var tl = w2s(b.x, b.y);
-  var rect = {
+  positionPopupNearScreenRect(pop, {
     left: tl.x,
     top: tl.y,
     right: tl.x + b.w * cam.zoom,
     bottom: tl.y + b.h * cam.zoom,
-  };
-  var visLeft = Math.max(rect.left, margin);
-  var visRight = Math.min(rect.right, window.innerWidth - margin);
-  var visTop = Math.max(rect.top, safeTop);
-  var visBottom = Math.min(rect.bottom, safeBottom);
-  if (visLeft > visRight) {
-    var cx = clamp((rect.left + rect.right) / 2, margin, window.innerWidth - margin);
-    visLeft = cx;
-    visRight = cx;
-  }
-  if (visTop > visBottom) {
-    var cy = clamp((rect.top + rect.bottom) / 2, safeTop, safeBottom);
-    visTop = cy;
-    visBottom = cy;
-  }
-
-  var left = clamp((visLeft + visRight) / 2 - pW / 2, margin, window.innerWidth - pW - margin);
-  var rotateClearance = ROTATE_HANDLE_DIST + ROTATE_HANDLE_RADIUS + 12;
-  var above = rect.top - pH - rotateClearance;
-  var below = rect.bottom + 10;
-  var top;
-  if (above >= safeTop) {
-    top = above;
-  } else if (below + pH <= safeBottom) {
-    top = below;
-  } else if (visBottom - visTop >= pH + 20) {
-    top = clamp(visTop + 10, safeTop, safeBottom - pH);
-  } else {
-    top = clamp((visTop + visBottom) / 2 - pH / 2, safeTop, safeBottom - pH);
-  }
-  pop.style.left = left + "px";
-  pop.style.top = top + "px";
+  }, estimatedHeight, null, ROTATE_HANDLE_DIST + ROTATE_HANDLE_RADIUS + 12);
 }
 
 function getPopupSafeArea() {
@@ -365,15 +408,13 @@ function updatePopup() {
   if (isTextEdit) {
     var ed = document.getElementById("textEditor");
     var er = ed.getBoundingClientRect();
-    var ph = 140;
-    var top = er.top - ph - 8;
-    if (top < 10) top = er.bottom + 10;
-    var left = er.left;
-    if (left + 380 > window.innerWidth) left = window.innerWidth - 390;
-    if (left < 10) left = 10;
-    pop.style.left = left + "px";
-    pop.style.top = top + "px";
     pop.classList.add("visible");
+    positionPopupNearScreenRect(pop, {
+      left: er.left,
+      top: er.top,
+      right: er.right,
+      bottom: er.bottom,
+    }, 140, getCaretRect(ed), 12);
     document.getElementById("popTextRow").style.display = "flex";
     syncPaletteRows(true, false);
     document.getElementById("popArrowRow").style.display = "none";
@@ -410,6 +451,12 @@ function updatePopup() {
       document.getElementById("popStrokeWeight").value = fw2;
       document.getElementById("popStrokeVal").textContent = fw2;
     }
+    positionPopupNearScreenRect(pop, {
+      left: er.left,
+      top: er.top,
+      right: er.right,
+      bottom: er.bottom,
+    }, 140, getCaretRect(ed), 12);
     return;
   }
   if (isStickyEdit) {
