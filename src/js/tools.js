@@ -939,9 +939,17 @@ function applyTextResize(obj, snap, dx, dy, preserveAspect) {
   if (dm === 'resize-t' || dm === 'resize-tl' || dm === 'resize-tr') boxH = ob.h - dy;
   boxW = Math.max(minW, boxW);
   boxH = Math.max(minH, boxH);
+  var textScale = getTextBaseScale(snap);
+  if (!preserveAspect) {
+    var sx = Math.max(0.1, boxW / ob.w);
+    var sy = Math.max(0.1, boxH / ob.h);
+    if (dm === 'resize-l' || dm === 'resize-r') textScale *= sx;
+    else if (dm === 'resize-t' || dm === 'resize-b') textScale *= sy;
+    else textScale *= Math.min(sx, sy);
+  }
   obj.fontSize = snap.fontSize;
-  obj.scaleX = getTextBaseScale(snap);
-  obj.scaleY = getTextBaseScale(snap);
+  obj.scaleX = textScale;
+  obj.scaleY = textScale;
   obj.wrapText = true;
   obj.wrapWidth = boxW;
   obj.boxW = boxW;

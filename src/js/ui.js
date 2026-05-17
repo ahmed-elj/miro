@@ -416,6 +416,10 @@ function updatePopup() {
     pop.classList.remove("visible");
     return;
   }
+  if (s.dragMode) {
+    pop.classList.remove("visible");
+    return;
+  }
   if (s.selectedIds.length > 1) {
     // Multiselect popup — show limited controls
     var allBounds = [];
@@ -2395,6 +2399,8 @@ function onPointerUp(e) {
     s.dragGroupRotation = 0;
     s.dragRotPointerOffset = 0;
     s.groupEditCandidateId = null;
+    updatePopup();
+    requestRender();
   }
 }
 
