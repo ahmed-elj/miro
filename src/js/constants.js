@@ -3,7 +3,7 @@
  */
 
 export const COLORS = [
-  '#e4e4e8', '#6b6b78', '#ef4444', '#f97316', '#eab308',
+  '#000000', '#e4e4e8', '#6b6b78', '#ef4444', '#f97316', '#eab308',
   '#22c55e', '#10b981', '#06b6d4', '#818cf8', '#c084fc',
   '#f472b6', '#fbbf24',
 ];
@@ -41,12 +41,44 @@ export const KEY_MAP = {
 };
 
 export const DEFAULT_SETTINGS = {
+  theme: 'dark',
   accentColor: '#10b981',
   canvasColor: '#1a1a1f',
   gridColor: '#28282f',
   bgPattern: 'dots',
   popupColorsExpanded: false,
   keyMap: Object.assign({}, KEY_MAP),
+};
+
+export const THEME_PRESETS = {
+  dark: {
+    canvasColor: '#1a1a1f',
+    gridColor: '#28282f',
+    objectColor: '#e4e4e8',
+    ui: {
+      bg: '#141417',
+      panel: '#1e1e24',
+      border: '#2a2a32',
+      fg: '#e4e4e8',
+      muted: '#6b6b78',
+      shadowPanel: '0 4px 24px rgba(0, 0, 0, 0.4)',
+      shadowPopup: '0 8px 32px rgba(0, 0, 0, 0.5)',
+    },
+  },
+  white: {
+    canvasColor: '#f8fafc',
+    gridColor: '#d8dee9',
+    objectColor: '#111827',
+    ui: {
+      bg: '#eef2f7',
+      panel: '#ffffff',
+      border: '#d7dde7',
+      fg: '#111827',
+      muted: '#667085',
+      shadowPanel: '0 4px 22px rgba(15, 23, 42, 0.14)',
+      shadowPopup: '0 8px 30px rgba(15, 23, 42, 0.18)',
+    },
+  },
 };
 
 /** Tool → cursor CSS class mapping */

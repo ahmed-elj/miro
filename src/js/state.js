@@ -38,6 +38,7 @@ export const state = {
   dragRotPointerOffset: 0, // pointer angle offset from group rotate handle
   curTool: 'select',
   curColor: '#e4e4e8',
+  curColorTouched: false,
   curStroke: 2,
   fillOn: false,
 
@@ -78,6 +79,7 @@ export const state = {
   viewBookmarks: [],
 
   settings: {
+    theme: DEFAULT_SETTINGS.theme,
     accentColor: DEFAULT_SETTINGS.accentColor,
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,

@@ -9,6 +9,7 @@ import {
   STROKE_WIDTHS,
   KEY_MAP,
   DEFAULT_SETTINGS,
+  THEME_PRESETS,
   CURSOR_MAP,
   STORAGE_KEY,
   ROTATE_HANDLE_DIST,
@@ -143,6 +144,42 @@ function applyAccentVars() {
   document.documentElement.style.setProperty("--accent-dim", hexToCssRgba(accent, 0.15));
 }
 
+function getThemePreset(theme) {
+  return THEME_PRESETS[theme] || THEME_PRESETS.dark;
+}
+
+function getDefaultObjectColor() {
+  return getThemePreset(state.settings.theme).objectColor;
+}
+
+function applyThemeVars() {
+  var preset = getThemePreset(state.settings.theme).ui;
+  var root = document.documentElement;
+  root.style.setProperty("--bg", preset.bg);
+  root.style.setProperty("--panel", preset.panel);
+  root.style.setProperty("--border", preset.border);
+  root.style.setProperty("--fg", preset.fg);
+  root.style.setProperty("--muted", preset.muted);
+  root.style.setProperty("--shadow-panel", preset.shadowPanel);
+  root.style.setProperty("--shadow-popup", preset.shadowPopup);
+}
+
+function syncTopbarColorSelection() {
+  document.querySelectorAll(".color-swatch").forEach(function (sw) {
+    sw.classList.toggle("active", sw.dataset.color === state.curColor);
+  });
+}
+
+function applyThemeDefaults(theme) {
+  var preset = getThemePreset(theme);
+  state.settings.theme = THEME_PRESETS[theme] ? theme : "dark";
+  state.settings.canvasColor = preset.canvasColor;
+  state.settings.gridColor = preset.gridColor;
+  state.curColor = preset.objectColor;
+  state.curColorTouched = false;
+  applyThemeVars();
+}
+
 function hexToCssRgba(hex, alpha) {
   var raw = (hex || "").replace("#", "");
   if (raw.length === 3) raw = raw.split("").map(function (ch) { return ch + ch; }).join("");
@@ -154,17 +191,21 @@ function hexToCssRgba(hex, alpha) {
 function applySettingsToUI() {
   var s = state.settings;
   syncKeyMap();
+  applyThemeVars();
   applyAccentVars();
+  var themeInput = document.getElementById("themeSelect");
   var accentInput = document.getElementById("accentColor");
   var canvasInput = document.getElementById("canvasColor");
   var gridInput = document.getElementById("gridColor");
   var patternInput = document.getElementById("bgPattern");
+  if (themeInput) themeInput.value = s.theme;
   if (accentInput) accentInput.value = s.accentColor;
   if (canvasInput) canvasInput.value = s.canvasColor;
   if (gridInput) gridInput.value = s.gridColor;
   if (patternInput) patternInput.value = s.bgPattern;
   updateShortcutLabels();
   updateKeybindList();
+  syncTopbarColorSelection();
 }
 
 // ── Resize canvas ──
@@ -548,7 +589,7 @@ function normalizeHexColor(color) {
 function syncFillControls(obj) {
   document.getElementById("popFillEnabled").checked = !!(obj && obj.fill);
   document.getElementById("popFillColor").value = normalizeHexColor(
-    (obj && (obj.fillColor || obj.color || obj.bgColor)) || "#e4e4e8",
+    (obj && (obj.fillColor || obj.color || obj.bgColor)) || getDefaultObjectColor(),
   );
   var fillOpacity = obj && obj.fillOpacity != null ? obj.fillOpacity : 0.28;
   document.getElementById("popFillOpacity").value = fillOpacity;
@@ -1129,8 +1170,10 @@ function setupTopbar() {
     var sw = document.createElement("div");
     sw.className = "color-swatch" + (c === s.curColor ? " active" : "");
     sw.style.background = c;
+    sw.dataset.color = c;
     sw.addEventListener("click", function () {
       s.curColor = c;
+      s.curColorTouched = true;
       document.querySelectorAll(".color-swatch").forEach(function (x) {
         x.classList.remove("active");
       });
@@ -1607,12 +1650,15 @@ function setToolShortcut(tool, code) {
 }
 
 function resetSettings() {
+  state.settings.theme = DEFAULT_SETTINGS.theme;
   state.settings.accentColor = DEFAULT_SETTINGS.accentColor;
   state.settings.canvasColor = DEFAULT_SETTINGS.canvasColor;
   state.settings.gridColor = DEFAULT_SETTINGS.gridColor;
   state.settings.bgPattern = DEFAULT_SETTINGS.bgPattern;
   state.settings.popupColorsExpanded = DEFAULT_SETTINGS.popupColorsExpanded;
   state.settings.keyMap = Object.assign({}, DEFAULT_SETTINGS.keyMap);
+  state.curColor = getDefaultObjectColor();
+  state.curColorTouched = false;
   applySettingsToUI();
   requestRender();
   saveToStorage();
@@ -1680,6 +1726,12 @@ function setupOptions() {
     clearCapture();
   }, true);
 
+  document.getElementById("themeSelect").addEventListener("change", function (e) {
+    applyThemeDefaults(e.target.value);
+    applySettingsToUI();
+    requestRender();
+    saveToStorage();
+  });
   document.getElementById("accentColor").addEventListener("input", function (e) {
     state.settings.accentColor = e.target.value;
     applyAccentVars();
@@ -2080,6 +2132,7 @@ export function saveToStorage() {
 
 function mergeSettings(saved) {
   var next = {
+    theme: DEFAULT_SETTINGS.theme,
     accentColor: DEFAULT_SETTINGS.accentColor,
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,
@@ -2088,6 +2141,7 @@ function mergeSettings(saved) {
     keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
   };
   if (saved && typeof saved === "object") {
+    if (saved.theme === "dark" || saved.theme === "white") next.theme = saved.theme;
     ["accentColor", "canvasColor", "gridColor"].forEach(function (key) {
       if (typeof saved[key] === "string" && /^#[0-9a-fA-F]{6}$/.test(saved[key])) next[key] = saved[key];
     });
@@ -2102,6 +2156,8 @@ function mergeSettings(saved) {
     }
   }
   state.settings = next;
+  state.curColor = getThemePreset(next.theme).objectColor;
+  state.curColorTouched = false;
   syncKeyMap();
 }
 
