@@ -42,7 +42,7 @@ function render() {
   if (s.isBoxSelect) drawMarquee(ctx);
   if (s.groupEditId && !s.isEditing) drawGroupEditFrame(ctx);
   if (s.selectedIds.length > 1 && !s.isEditing) drawGroupHandles(ctx);
-  else if (s.selectedId !== null && !s.isEditing) drawHandles(ctx);
+  else if (s.selectedId !== null && (!s.isEditing || s.editId === s.selectedId)) drawHandles(ctx);
   if (s.locateEnd > 0) drawLocateHighlights(ctx);
   ctx.restore();
   if (!objects.length && !s.isDrawing) {

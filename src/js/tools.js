@@ -6,7 +6,7 @@ import { cam, objects, imgCache, state, gid } from './state.js';
 import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT, ROTATE_HANDLE_DIST } from './constants.js';
 import { s2w, w2s, showToast, getArrowBendHandle, ptSegDist } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
-import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
+import { getBounds, getRotatedBounds, hitTest, hitBorder, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, findObj } from './undo.js';
 
@@ -110,16 +110,43 @@ function hasUnlockedObject(ids) {
   return false;
 }
 
+function boundsDistanceToPoint(b, wx, wy) {
+  if (!b) return Infinity;
+  var dx = wx < b.x ? b.x - wx : wx > b.x + b.w ? wx - (b.x + b.w) : 0;
+  var dy = wy < b.y ? b.y - wy : wy > b.y + b.h ? wy - (b.y + b.h) : 0;
+  return Math.hypot(dx, dy);
+}
+
+function hitScore(obj, wx, wy, zIndex) {
+  if (!hitTest(obj, wx, wy)) return null;
+  var b = getRotatedBounds(obj);
+  var borderHit = hitBorder(obj, wx, wy);
+  var score = zIndex * 0.0001;
+  if (borderHit) score += 1000;
+  else if (obj.type === 'text') score += 120;
+  else if (obj.fill || obj.type === 'sticky' || obj.type === 'image') score += 300;
+  else score += 80;
+  score -= boundsDistanceToPoint(b, wx, wy) * cam.zoom;
+  return { obj: obj, score: score };
+}
+
+function getRankedHits(wx, wy) {
+  var ranked = [];
+  for (var i = objects.length - 1; i >= 0; i--) {
+    var hit = hitScore(objects[i], wx, wy, i);
+    if (hit) ranked.push(hit);
+  }
+  ranked.sort(function(a, b) { return b.score - a.score; });
+  return ranked.map(function(hit) { return hit.obj; });
+}
+
 // ── Select tool: pointer down ──
 export function onSelectDown(wp, sx, sy, shiftKey) {
   var s = state;
 
   // If shift-held and clicking on an object, toggle it in the selection
   if (shiftKey) {
-    var hits = [];
-    for (var i = objects.length - 1; i >= 0; i--) {
-      if (hitTest(objects[i], wp.x, wp.y)) hits.push(objects[i]);
-    }
+    var hits = getRankedHits(wp.x, wp.y);
     if (hits.length) {
       var clicked = hits[0];
       var linkedClicked = getLinkedSelectionIds(clicked.id);
@@ -247,10 +274,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   }
 
   // Collect all objects under the click point (top-to-bottom order)
-  var hits2 = [];
-  for (var i2 = objects.length - 1; i2 >= 0; i2--) {
-    if (hitTest(objects[i2], wp.x, wp.y)) hits2.push(objects[i2]);
-  }
+  var hits2 = getRankedHits(wp.x, wp.y);
   if (hits2.length) {
     if (s.groupEditId && hits2[0].groupId !== s.groupEditId) {
       s.groupEditId = null;
