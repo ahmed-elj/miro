@@ -1662,7 +1662,7 @@ function onPointerMove(e) {
       saveState();
       s.dragUndo = true;
     }
-    handleDrag(wp);
+    handleDrag(wp, e.ctrlKey);
   }
 }
 

@@ -531,10 +531,35 @@ function scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy) {
   }
 }
 
+function constrainResizeScales(w, h, sx, sy, minScale) {
+  if (w < 0.000001 || h < 0.000001) return { sx: sx, sy: sy };
+  var scale = Math.max(Math.abs(sx), Math.abs(sy), minScale || 0.05);
+  return { sx: scale, sy: scale };
+}
+
+function getAspectResizeSize(snapW, snapH, newW, newH, minSize) {
+  if (snapW < 0.000001 || snapH < 0.000001) {
+    return { w: Math.max(minSize, newW), h: Math.max(minSize, newH) };
+  }
+  var minScale = Math.max(minSize / snapW, minSize / snapH);
+  var scale = Math.max(newW / snapW, newH / snapH, minScale);
+  return { w: snapW * scale, h: snapH * scale };
+}
+
+function constrainLineEndpoint(anchor, snapMoving, rawMoving) {
+  var vx = snapMoving.x - anchor.x, vy = snapMoving.y - anchor.y;
+  var len2 = vx * vx + vy * vy;
+  if (len2 < 0.000001) return rawMoving;
+  var rx = rawMoving.x - anchor.x, ry = rawMoving.y - anchor.y;
+  var scale = Math.max(0.05, (rx * vx + ry * vy) / len2);
+  return { x: anchor.x + vx * scale, y: anchor.y + vy * scale };
+}
+
 // ── Drag handling ──
-export function handleDrag(wp) {
+export function handleDrag(wp, freeResize) {
   var s = state;
   var dx = wp.x - s.dragSW.x, dy = wp.y - s.dragSW.y;
+  var preserveAspect = !freeResize;
 
   // Multi-object move
   if (s.dragMode === 'move-multi' && s.multiDragSnaps) {
@@ -635,6 +660,11 @@ export function handleDrag(wp) {
     }
     var sx = Math.max(0.05, newW / snapGb.w);
     var sy = Math.max(0.05, newH / snapGb.h);
+    if (preserveAspect) {
+      var constrained = constrainResizeScales(snapGb.w, snapGb.h, sx, sy, 0.05);
+      sx = constrained.sx;
+      sy = constrained.sy;
+    }
 
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
@@ -711,18 +741,40 @@ export function handleDrag(wp) {
   } else if (s.dragMode.startsWith('resize-')) {
     var ms = 10 / cam.zoom;
     if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image') {
-      applyResize(obj2, snap2, dx, dy, ms);
+      applyResize(obj2, snap2, dx, dy, ms, preserveAspect);
     } else if (obj2.type === 'sticky') {
-      applyStickyResize(obj2, snap2, dx, dy);
+      applyStickyResize(obj2, snap2, dx, dy, preserveAspect);
     } else if (obj2.type === 'text') {
-      applyTextResize(obj2, snap2, dx, dy);
+      applyTextResize(obj2, snap2, dx, dy, preserveAspect);
     } else if (obj2.type === 'line' || obj2.type === 'arrow') {
+      var lineAnchor = null;
+      var lineMoving = null;
       if (s.dragMode === 'resize-br' || s.dragMode === 'resize-tr') {
-        if (snap2.x2 >= snap2.x1) { obj2.x2 = snap2.x2 + dx; obj2.y2 = snap2.y2 + dy; }
-        else { obj2.x1 = snap2.x1 + dx; obj2.y1 = snap2.y1 + dy; }
+        if (snap2.x2 >= snap2.x1) {
+          lineAnchor = { x: snap2.x1, y: snap2.y1 };
+          lineMoving = { x: snap2.x2, y: snap2.y2 };
+          var p2 = preserveAspect ? constrainLineEndpoint(lineAnchor, lineMoving, { x: snap2.x2 + dx, y: snap2.y2 + dy }) : { x: snap2.x2 + dx, y: snap2.y2 + dy };
+          obj2.x2 = p2.x; obj2.y2 = p2.y;
+        }
+        else {
+          lineAnchor = { x: snap2.x2, y: snap2.y2 };
+          lineMoving = { x: snap2.x1, y: snap2.y1 };
+          var p1 = preserveAspect ? constrainLineEndpoint(lineAnchor, lineMoving, { x: snap2.x1 + dx, y: snap2.y1 + dy }) : { x: snap2.x1 + dx, y: snap2.y1 + dy };
+          obj2.x1 = p1.x; obj2.y1 = p1.y;
+        }
       } else {
-        if (snap2.x1 <= snap2.x2) { obj2.x1 = snap2.x1 + dx; obj2.y1 = snap2.y1 + dy; }
-        else { obj2.x2 = snap2.x2 + dx; obj2.y2 = snap2.y2 + dy; }
+        if (snap2.x1 <= snap2.x2) {
+          lineAnchor = { x: snap2.x2, y: snap2.y2 };
+          lineMoving = { x: snap2.x1, y: snap2.y1 };
+          var p3 = preserveAspect ? constrainLineEndpoint(lineAnchor, lineMoving, { x: snap2.x1 + dx, y: snap2.y1 + dy }) : { x: snap2.x1 + dx, y: snap2.y1 + dy };
+          obj2.x1 = p3.x; obj2.y1 = p3.y;
+        }
+        else {
+          lineAnchor = { x: snap2.x1, y: snap2.y1 };
+          lineMoving = { x: snap2.x2, y: snap2.y2 };
+          var p4 = preserveAspect ? constrainLineEndpoint(lineAnchor, lineMoving, { x: snap2.x2 + dx, y: snap2.y2 + dy }) : { x: snap2.x2 + dx, y: snap2.y2 + dy };
+          obj2.x2 = p4.x; obj2.y2 = p4.y;
+        }
       }
       if (obj2.type === 'arrow') {
         if (Number.isFinite(snap2.cpX) && Number.isFinite(snap2.cpY)) {
@@ -741,37 +793,50 @@ export function handleDrag(wp) {
       else if (s.dragMode === 'resize-tr') { ox = b.x; oy = b.y + b.h; sx2 = (b.w + dx) / b.w; sy2 = (b.h - dy) / b.h; }
       else { ox = b.x + b.w; oy = b.y + b.h; sx2 = (b.w - dx) / b.w; sy2 = (b.h - dy) / b.h; }
       sx2 = Math.max(0.05, sx2); sy2 = Math.max(0.05, sy2);
+      if (preserveAspect) {
+        var pc = constrainResizeScales(b.w, b.h, sx2, sy2, 0.05);
+        sx2 = pc.sx;
+        sy2 = pc.sy;
+      }
       obj2.points = snap2.points.map(function(p) { return { x: ox + (p.x - ox) * sx2, y: oy + (p.y - oy) * sy2 }; });
     }
   }
   requestRender();
 }
 
-function applyResize(o, snap, dx, dy, ms) {
+function applyResize(o, snap, dx, dy, ms, preserveAspect) {
   var dm = state.dragMode;
+  var nw, nh, size;
   if (dm === 'resize-br') {
-    o.w = Math.max(ms, snap.w + dx); o.h = Math.max(ms, snap.h + dy);
+    nw = Math.max(ms, snap.w + dx); nh = Math.max(ms, snap.h + dy);
+    size = preserveAspect ? getAspectResizeSize(snap.w, snap.h, nw, nh, ms) : { w: nw, h: nh };
+    o.w = size.w; o.h = size.h;
   } else if (dm === 'resize-bl') {
-    var nw = Math.max(ms, snap.w - dx); o.x = snap.x + snap.w - nw; o.w = nw; o.h = Math.max(ms, snap.h + dy);
+    nw = Math.max(ms, snap.w - dx); nh = Math.max(ms, snap.h + dy);
+    size = preserveAspect ? getAspectResizeSize(snap.w, snap.h, nw, nh, ms) : { w: nw, h: nh };
+    o.x = snap.x + snap.w - size.w; o.w = size.w; o.h = size.h;
   } else if (dm === 'resize-tr') {
-    o.w = Math.max(ms, snap.w + dx); var nh = Math.max(ms, snap.h - dy); o.y = snap.y + snap.h - nh; o.h = nh;
+    nw = Math.max(ms, snap.w + dx); nh = Math.max(ms, snap.h - dy);
+    size = preserveAspect ? getAspectResizeSize(snap.w, snap.h, nw, nh, ms) : { w: nw, h: nh };
+    o.w = size.w; o.y = snap.y + snap.h - size.h; o.h = size.h;
   } else if (dm === 'resize-tl') {
-    var nw2 = Math.max(ms, snap.w - dx), nh2 = Math.max(ms, snap.h - dy);
-    o.x = snap.x + snap.w - nw2; o.y = snap.y + snap.h - nh2; o.w = nw2; o.h = nh2;
+    nw = Math.max(ms, snap.w - dx); nh = Math.max(ms, snap.h - dy);
+    size = preserveAspect ? getAspectResizeSize(snap.w, snap.h, nw, nh, ms) : { w: nw, h: nh };
+    o.x = snap.x + snap.w - size.w; o.y = snap.y + snap.h - size.h; o.w = size.w; o.h = size.h;
   }
 }
 
-function applyStickyResize(o, snap, dx, dy) {
+function applyStickyResize(o, snap, dx, dy, preserveAspect) {
   var ms = 40 / cam.zoom;
   var origW = snap.w, origH = snap.h;
-  applyResize(o, snap, dx, dy, ms);
+  applyResize(o, snap, dx, dy, ms, preserveAspect);
   if (origW > 0 && origH > 0) {
     var sw2 = o.w / origW, sh2 = o.h / origH;
     o.fontSize = snap.fontSize * ((sw2 + sh2) / 2);
   }
 }
 
-function applyTextResize(obj, snap, dx, dy) {
+function applyTextResize(obj, snap, dx, dy, preserveAspect) {
   var ob = getBounds(snap);
   if (!ob || ob.w <= 0.000001 || ob.h <= 0.000001) {
     return;
@@ -787,9 +852,18 @@ function applyTextResize(obj, snap, dx, dy) {
   } else {
     ax = ob.x + ob.w; ay = ob.y + ob.h; cx = ob.x + dx; cy = ob.y + dy;
   }
+  var textScaleX = Math.max(0.1, Math.abs(cx - ax) / ob.w);
+  var textScaleY = Math.max(0.1, Math.abs(cy - ay) / ob.h);
+  if (preserveAspect) {
+    var tc = constrainResizeScales(ob.w, ob.h, textScaleX, textScaleY, 0.1);
+    textScaleX = tc.sx;
+    textScaleY = tc.sy;
+    cx = ax + (cx >= ax ? ob.w * textScaleX : -ob.w * textScaleX);
+    cy = ay + (cy >= ay ? ob.h * textScaleY : -ob.h * textScaleY);
+  }
   obj.fontSize = snap.fontSize;
-  obj.scaleX = Math.max(0.1, (snap.scaleX || 1) * Math.abs(cx - ax) / ob.w);
-  obj.scaleY = Math.max(0.1, (snap.scaleY || 1) * Math.abs(cy - ay) / ob.h);
+  obj.scaleX = (snap.scaleX || 1) * textScaleX;
+  obj.scaleY = (snap.scaleY || 1) * textScaleY;
   var localCenterX = (ax + cx) / 2;
   var localCenterY = (ay + cy) / 2;
   if (snap.rotation || 0) {
