@@ -47,10 +47,10 @@ function render() {
   ctx.restore();
   if (!objects.length && !s.isDrawing) {
     ctx.fillStyle = '#3a3a44';
-    ctx.font = '500 18px Space Grotesk';
+    ctx.font = '500 18px Open Sans';
     ctx.textAlign = 'center';
     ctx.fillText('Pick a tool and start drawing', w / 2, h / 2);
-    ctx.font = '400 13px Space Grotesk';
+    ctx.font = '400 13px Open Sans';
     ctx.fillStyle = '#2a2a32';
     ctx.fillText('Scroll to zoom \u00B7 Space to pan \u00B7 Ctrl+Z to undo', w / 2, h / 2 + 30);
     ctx.textAlign = 'left';
@@ -297,7 +297,7 @@ function drawText(c, o) {
   });
   function spanFont(s) {
     var w = s.bold ? '700' : String(baseW);
-    return (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Space Grotesk';
+    return (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Open Sans';
   }
   // Measure max width for horizontal centering
   var lh = rS * 1.4;
@@ -361,7 +361,7 @@ function drawStickyText(c, o) {
   var minR = 14, rS = Math.max(minR, o.fontSize), sc = o.fontSize / rS;
   var pad = Math.min(o.w, o.h) * 0.08;
   c.save(); c.translate(o.x + pad, o.y + pad); c.scale(sc, sc);
-  c.fillStyle = '#1a1a1f'; c.font = '500 ' + rS + 'px Space Grotesk'; c.textBaseline = 'top';
+  c.fillStyle = '#1a1a1f'; c.font = '500 ' + rS + 'px Open Sans'; c.textBaseline = 'top';
   var mxW = (o.w - pad * 2) / sc, cy = 0;
   o.text.split('\n').forEach(function(l) {
     wrapLine(c, l, mxW).forEach(function(wl2) { c.fillText(wl2, 0, cy); cy += rS * 1.45; });

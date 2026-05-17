@@ -77,7 +77,7 @@ export function getBounds(obj) {
     var lw = 0;
     line.forEach(function(s) {
       var w = s.bold ? '700' : String(baseW);
-      tc.font = (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Space Grotesk';
+      tc.font = (s.italic ? 'italic ' : 'normal ') + w + ' ' + rS + 'px Open Sans';
       lw += tc.measureText(s.text).width;
     });
     maxW = Math.max(maxW, lw);
