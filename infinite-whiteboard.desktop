@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Infinite Whiteboard
+Comment=Open the Infinite Whiteboard app
+Exec=bash -lc "cd /home/diron/Projects/miro && (npm run dev -- --host 127.0.0.1 --port 3000 --strictPort >/tmp/infinite-whiteboard.log 2>&1 &); sleep 1; xdg-open http://127.0.0.1:3000/"
+Path=/home/diron/Projects/miro
+Icon=applications-graphics
+Terminal=false
+Categories=Graphics;
+StartupNotify=true
