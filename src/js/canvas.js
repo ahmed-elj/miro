@@ -323,9 +323,12 @@ function drawText(c, o) {
       c.fillText(s.text, cx, cy);
       if (s.underline) {
         var tw = c.measureText(s.text).width;
+        var underlineScaleY = Math.max(0.001, Math.abs(sc * scaleY));
+        var screenToLocal = 1 / Math.max(0.001, cam.zoom * underlineScaleY);
         c.strokeStyle = s.color;
-        c.lineWidth = Math.max(1, rS * 0.06);
-        c.beginPath(); c.moveTo(cx, cy + rS * 0.35); c.lineTo(cx + tw, cy + rS * 0.35); c.stroke();
+        c.lineWidth = Math.max(screenToLocal, Math.min(rS * 0.025, 3 * screenToLocal));
+        c.lineCap = 'butt';
+        c.beginPath(); c.moveTo(cx, cy + rS * 0.34); c.lineTo(cx + tw, cy + rS * 0.34); c.stroke();
       }
       cx += c.measureText(s.text).width;
     });
