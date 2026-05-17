@@ -77,6 +77,9 @@ export const state = {
   currentBoardId: 'default',
 
   viewBookmarks: [],
+  clipboardObjects: [],
+  contextPastePoint: null,
+  lastPointerWorld: null,
 
   settings: {
     theme: DEFAULT_SETTINGS.theme,

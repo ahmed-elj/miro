@@ -8,7 +8,7 @@ import { s2w, w2s, showToast, getArrowBendHandle, ptSegDist } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
 import { getBounds, getRotatedBounds, hitTest, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
-import { saveState, addObj, delSel, findObj } from './undo.js';
+import { saveState, addObj, findObj } from './undo.js';
 
 function getLinkedSelectionIds(id) {
   var obj = findObj(id);
@@ -102,6 +102,14 @@ function expandGroupedIds(ids) {
   return out;
 }
 
+function hasUnlockedObject(ids) {
+  for (var i = 0; i < ids.length; i++) {
+    var obj = findObj(ids[i]);
+    if (obj && !obj.locked) return true;
+  }
+  return false;
+}
+
 // ── Select tool: pointer down ──
 export function onSelectDown(wp, sx, sy, shiftKey) {
   var s = state;
@@ -144,7 +152,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   if (s.selectedIds.length > 1) {
     var gb = getGroupBounds(s.selectedIds);
     if (gb) gb.rotation = s.groupRotation || 0;
-    if (gb && hitRotateHandleBounds(gb, wp.x, wp.y)) {
+    if (gb && hasUnlockedObject(s.selectedIds) && hitRotateHandleBounds(gb, wp.x, wp.y)) {
       var gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
       var handleLocalX = gb.x + gb.w / 2;
       var handleLocalY = gb.y - ROTATE_HANDLE_DIST / cam.zoom;
@@ -193,7 +201,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.dragUndo = false;
       return;
     }
-    if (obj && obj.type !== 'arrow' && hitRotateHandle(obj, wp.x, wp.y)) {
+    if (obj && !obj.locked && obj.type !== 'arrow' && hitRotateHandle(obj, wp.x, wp.y)) {
       s.dragMode = 'rotate';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -210,7 +218,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     if (gb) {
       gb.rotation = s.groupRotation || 0;
       var gh = hitHandleBounds(gb, wp.x, wp.y);
-      if (gh) {
+      if (gh && hasUnlockedObject(s.selectedIds)) {
         s.dragMode = gh;
         s.dragSW = wp;
         s.dragUndo = false;
@@ -226,7 +234,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     }
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
-    if (obj) {
+    if (obj && !obj.locked) {
       var h = obj.type === 'arrow' ? null : hitHandle(obj, wp.x, wp.y);
       if (h) {
         s.dragMode = h;
@@ -263,6 +271,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       if (!s.groupEditId && clickedSelectedObj && isSelectedLinkedGroup(clickedSelectedObj.groupId)) {
         s.groupEditCandidateId = clickedSelectedId;
       }
+      if (!hasUnlockedObject(s.selectedIds)) return;
       s.dragMode = 'move-multi';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -282,6 +291,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
 
     if (selInHits >= 0) {
       // Set up drag on current selection; defer cycle to pointer up
+      if (selObj.locked) return;
       s.dragMode = 'move';
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(selObj));
@@ -291,6 +301,10 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
     } else {
       // New area — select topmost object (clear multiselect)
       setSelectionFromObject(hits2[0].id);
+      if (hits2[0].locked) {
+        requestRender();
+        return;
+      }
       s.dragMode = s.selectedIds.length > 1 ? 'move-multi' : 'move';
       s.dragSW = wp;
       s.dragSnap = JSON.parse(JSON.stringify(hits2[0]));
@@ -566,6 +580,7 @@ export function handleDrag(wp, freeResize) {
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
       var snap = s.multiDragSnaps[id];
+      if (obj && obj.locked) return;
       if (!obj || !snap) return;
       moveObjectBy(obj, snap, dx, dy);
     });
@@ -599,6 +614,7 @@ export function handleDrag(wp, freeResize) {
     s.selectedIds.forEach(function(id) {
       var o = findObj(id);
       var snap = s.dragRotSnaps[id];
+      if (o && o.locked) return;
       if (!o || !snap) return;
       if (o.type !== 'arrow') o.rotation = (snap.rotation || 0) + delta;
       var offx = snap.cx - gcx, offy = snap.cy - gcy;
@@ -669,6 +685,7 @@ export function handleDrag(wp, freeResize) {
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
       var snap = s.multiDragSnaps[id];
+      if (obj && obj.locked) return;
       if (!obj || !snap) return;
       scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy);
     });
@@ -678,6 +695,7 @@ export function handleDrag(wp, freeResize) {
 
   var obj2 = findObj(s.selectedId);
   if (!obj2 || !s.dragSnap) return;
+  if (obj2.locked) return;
   var snap2 = s.dragSnap;
 
   if (s.dragMode === 'move') {

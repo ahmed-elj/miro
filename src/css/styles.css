@@ -720,6 +720,89 @@ caret-color: var(--accent);
   display: flex;
 }
 
+#contextMenu {
+  position: absolute;
+  z-index: 60;
+  display: none;
+  min-width: 172px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  box-shadow: var(--shadow-popup);
+}
+
+#contextMenu.open {
+  display: grid;
+  gap: 2px;
+}
+
+#contextMenu button {
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+#contextMenu button:hover {
+  background: var(--border);
+}
+
+#contextMenu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#contextMenu button:disabled:hover {
+  background: transparent;
+}
+
+#contextMenu button i {
+  width: 14px;
+  text-align: center;
+  color: var(--muted);
+}
+
+#contextMenu button.danger:hover,
+#contextMenu button.danger:hover i {
+  color: var(--danger);
+}
+
+.context-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.context-colors {
+  display: grid;
+  grid-template-columns: repeat(7, 18px);
+  gap: 6px;
+  padding: 6px;
+}
+
+.context-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.context-color:hover {
+  border-color: var(--fg);
+}
+
 .popup-row {
   display: flex;
   align-items: center;

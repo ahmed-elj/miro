@@ -2,7 +2,7 @@
  * User-interface — toolbar, topbar, bottombar, popup, keyboard, pointer, persistence.
  */
 
-import { cam, objects, canvas, dpr, state } from "./state.js";
+import { cam, objects, canvas, dpr, state, gid } from "./state.js";
 import {
   COLORS,
   STICKY_COLORS,
@@ -25,7 +25,6 @@ import {
   redo,
   findObj,
   refreshImgCache,
-  delSel,
 } from "./undo.js";
 import {
   onSelectDown,
@@ -654,6 +653,176 @@ function applyPopStickyColor(c) {
   requestRender();
 }
 
+function getTopObjectAt(wp) {
+  for (var i = objects.length - 1; i >= 0; i--) {
+    if (hitTest(objects[i], wp.x, wp.y)) return objects[i];
+  }
+  return null;
+}
+
+function getSelectedIds() {
+  if (state.selectedIds.length) return state.selectedIds.slice();
+  return state.selectedId !== null ? [state.selectedId] : [];
+}
+
+function getSelectedObjects() {
+  return getSelectedIds().map(function (id) { return findObj(id); }).filter(Boolean);
+}
+
+function selectObjectForContext(obj) {
+  if (!obj) {
+    state.selectedId = null;
+    state.selectedIds = [];
+    state._lastPopupId = null;
+    return;
+  }
+  if (state.selectedIds.indexOf(obj.id) < 0) {
+    state.selectedId = obj.id;
+    state.selectedIds = obj.groupId
+      ? objects.filter(function (other) { return other.groupId === obj.groupId; }).map(function (other) { return other.id; })
+      : [obj.id];
+    state._lastPopupId = null;
+  } else {
+    state.selectedId = obj.id;
+  }
+}
+
+function cloneForClipboard(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function copySelection() {
+  var selected = getSelectedObjects();
+  if (!selected.length) return false;
+  state.clipboardObjects = selected.map(cloneForClipboard);
+  showToast("Copied");
+  return true;
+}
+
+function removeUnlockedSelected() {
+  var ids = getSelectedIds();
+  if (!ids.length) return false;
+  var removeIds = ids.filter(function (id) {
+    var obj = findObj(id);
+    return obj && !obj.locked;
+  });
+  if (!removeIds.length) {
+    showToast("Unlock object first");
+    return false;
+  }
+  saveState();
+  var kept = objects.filter(function (obj) { return removeIds.indexOf(obj.id) < 0; });
+  objects.length = 0;
+  kept.forEach(function (obj) { objects.push(obj); });
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  requestRender();
+  return true;
+}
+
+function cutSelection() {
+  var selected = getSelectedObjects();
+  if (!selected.length) return false;
+  if (!selected.some(function (obj) { return !obj.locked; })) {
+    showToast("Unlock object first");
+    return false;
+  }
+  state.clipboardObjects = selected.filter(function (obj) { return !obj.locked; }).map(cloneForClipboard);
+  removeUnlockedSelected();
+  showToast("Cut");
+  return true;
+}
+
+function getClipboardBounds(items) {
+  var bounds = [];
+  items.forEach(function (obj) {
+    var b = getRotatedBounds(obj);
+    if (b) bounds.push(b);
+  });
+  if (!bounds.length) return null;
+  var ax = Infinity, ay = Infinity, bx = -Infinity, by = -Infinity;
+  bounds.forEach(function (b) {
+    ax = Math.min(ax, b.x); ay = Math.min(ay, b.y);
+    bx = Math.max(bx, b.x + b.w); by = Math.max(by, b.y + b.h);
+  });
+  return { x: ax, y: ay, w: bx - ax, h: by - ay };
+}
+
+function moveClonedObject(obj, dx, dy) {
+  if (obj.points) obj.points = obj.points.map(function (p) { return { x: p.x + dx, y: p.y + dy }; });
+  ["x", "x1", "x2", "cpX"].forEach(function (key) { if (Number.isFinite(obj[key])) obj[key] += dx; });
+  ["y", "y1", "y2", "cpY"].forEach(function (key) { if (Number.isFinite(obj[key])) obj[key] += dy; });
+}
+
+function pasteClipboard(atWorld) {
+  var clip = state.clipboardObjects || [];
+  if (!clip.length) return false;
+  var bounds = getClipboardBounds(clip);
+  var target = atWorld || s2w(window.innerWidth / 2, window.innerHeight / 2);
+  var dx = bounds ? target.x - (bounds.x + bounds.w / 2) : 24 / cam.zoom;
+  var dy = bounds ? target.y - (bounds.y + bounds.h / 2) : 24 / cam.zoom;
+  if (!atWorld) {
+    dx = 24 / cam.zoom;
+    dy = 24 / cam.zoom;
+  }
+  var groupMap = {};
+  var newIds = [];
+  var pasted = [];
+  saveState();
+  clip.forEach(function (item) {
+    var obj = cloneForClipboard(item);
+    obj.id = gid();
+    obj.locked = false;
+    if (obj.groupId) {
+      if (!groupMap[obj.groupId]) groupMap[obj.groupId] = "grp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      obj.groupId = groupMap[obj.groupId];
+    }
+    moveClonedObject(obj, dx, dy);
+    objects.push(obj);
+    pasted.push(cloneForClipboard(obj));
+    newIds.push(obj.id);
+  });
+  state.clipboardObjects = pasted;
+  state.selectedIds = newIds;
+  state.selectedId = newIds.length ? newIds[newIds.length - 1] : null;
+  state._lastPopupId = null;
+  refreshImgCache();
+  requestRender();
+  showToast("Pasted");
+  return true;
+}
+
+function setSelectionColor(c) {
+  var targets = getSelectedObjects().filter(function (obj) { return !obj.locked; });
+  if (!targets.length) {
+    showToast("Unlock object first");
+    return;
+  }
+  saveState();
+  targets.forEach(function (obj) {
+    if (obj.type === "sticky") obj.bgColor = c;
+    else if (obj.type !== "image") {
+      obj.color = c;
+      if (obj.type === "text" && obj.spans) {
+        obj.spans.forEach(function (sp) { sp.color = c; });
+      }
+    }
+  });
+  requestRender();
+}
+
+function toggleSelectionLock() {
+  var targets = getSelectedObjects();
+  if (!targets.length) return;
+  var shouldLock = targets.some(function (obj) { return !obj.locked; });
+  saveState();
+  targets.forEach(function (obj) { obj.locked = shouldLock; });
+  requestRender();
+  showToast(shouldLock ? "Locked" : "Unlocked");
+}
+
 function buildPopupSwatches() {
   var cr = document.getElementById("popColorRow");
   COLORS.forEach(function (c) {
@@ -685,6 +854,76 @@ function buildPopupSwatches() {
     });
     sr.appendChild(s);
   });
+  var ctxRow = document.getElementById("contextColorRow");
+  if (ctxRow) {
+    COLORS.forEach(function (c) {
+      var sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "context-color";
+      sw.style.background = c;
+      sw.title = c;
+      sw.addEventListener("click", function (e) {
+        e.stopPropagation();
+        setSelectionColor(c);
+        closeContextMenu();
+      });
+      ctxRow.appendChild(sw);
+    });
+  }
+}
+
+function closeContextMenu() {
+  var menu = document.getElementById("contextMenu");
+  if (menu) menu.classList.remove("open");
+}
+
+function openContextMenu(clientX, clientY, wp, targetObj) {
+  var menu = document.getElementById("contextMenu");
+  if (!menu) return;
+  state.contextPastePoint = wp;
+  selectObjectForContext(targetObj);
+  var hasSelection = getSelectedObjects().length > 0;
+  var hasUnlockedSelection = getSelectedObjects().some(function (obj) { return !obj.locked; });
+  var hasClipboard = !!(state.clipboardObjects && state.clipboardObjects.length);
+  var colorRow = document.getElementById("contextColorRow");
+  if (colorRow) colorRow.style.display = hasSelection ? "grid" : "none";
+  menu.querySelector('[data-action="copy"]').disabled = !hasSelection;
+  menu.querySelector('[data-action="cut"]').disabled = !hasUnlockedSelection;
+  menu.querySelector('[data-action="delete"]').disabled = !hasUnlockedSelection;
+  menu.querySelector('[data-action="paste"]').disabled = !hasClipboard;
+  var lockBtn = menu.querySelector('[data-action="lock"]');
+  lockBtn.disabled = !hasSelection;
+  var shouldUnlock = hasSelection && getSelectedObjects().every(function (obj) { return obj.locked; });
+  lockBtn.querySelector("span").textContent = shouldUnlock ? "Unlock" : "Lock";
+  lockBtn.querySelector("i").className = shouldUnlock ? "fa-solid fa-lock-open" : "fa-solid fa-lock";
+  menu.classList.add("open");
+  var mw = menu.offsetWidth || 172;
+  var mh = menu.offsetHeight || 220;
+  var left = Math.max(8, Math.min(clientX, window.innerWidth - mw - 8));
+  var top = Math.max(8, Math.min(clientY, window.innerHeight - mh - 8));
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+  requestRender();
+}
+
+function setupContextMenu() {
+  var menu = document.getElementById("contextMenu");
+  if (!menu) return;
+  menu.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+  menu.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var btn = e.target.closest("button[data-action]");
+    if (!btn || btn.disabled) return;
+    var action = btn.dataset.action;
+    if (action === "copy") copySelection();
+    else if (action === "cut") cutSelection();
+    else if (action === "paste") pasteClipboard(state.contextPastePoint);
+    else if (action === "delete") removeUnlockedSelected();
+    else if (action === "lock") toggleSelectionLock();
+    closeContextMenu();
+  });
+  window.addEventListener("pointerdown", closeContextMenu);
+  window.addEventListener("blur", closeContextMenu);
 }
 
 function setupPopupHandlers() {
@@ -1115,7 +1354,7 @@ function setupPopupHandlers() {
     requestRender();
   });
   document.getElementById("popDelete").addEventListener("click", function () {
-    delSel();
+    removeUnlockedSelected();
   });
   // ── Edit text: enter editing mode so user can select characters and color them
   document.getElementById("popEditText").addEventListener("click", function () {
@@ -1772,6 +2011,12 @@ function setupOptions() {
 function setupPointerEvents() {
   var s = state;
   canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("mousedown", function (e) {
+    if (e.button === 1) e.preventDefault();
+  });
+  canvas.addEventListener("auxclick", function (e) {
+    if (e.button === 1) e.preventDefault();
+  });
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -1819,7 +2064,7 @@ function setupPointerEvents() {
     }
   });
   window.addEventListener("paste", function (e) {
-    if (s.isEditing) return;
+    if (s.isEditing || s.isPan || e.pointerType || !e.clipboardData) return;
     var items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
     for (var i = 0; i < items.length; i++) {
@@ -1834,6 +2079,11 @@ function setupPointerEvents() {
   });
   canvas.addEventListener("contextmenu", function (e) {
     e.preventDefault();
+    if (s.isEditing) finishEditing();
+    var r = canvas.getBoundingClientRect();
+    var wp = s2w(e.clientX - r.left, e.clientY - r.top);
+    var target = getTopObjectAt(wp);
+    openContextMenu(e.clientX, e.clientY, wp, target);
   });
 }
 
@@ -1917,6 +2167,7 @@ function onPointerMove(e) {
     sx = e.clientX - r.left,
     sy = e.clientY - r.top;
   var wp = s2w(sx, sy);
+  s.lastPointerWorld = wp;
   if (s.curTool === "eraser") {
     var ec = document.getElementById("eraserCursor");
     ec.style.display = "block";
@@ -2045,12 +2296,24 @@ function setupKeyboard() {
       setToolActive(KEY_MAP[e.code]);
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+      if (copySelection()) e.preventDefault();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
+      if (cutSelection()) e.preventDefault();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+      if (pasteClipboard(state.lastPointerWorld)) e.preventDefault();
+      return;
+    }
     if (
       (e.key === "Delete" || e.key === "Backspace") &&
       (s.selectedId !== null || s.selectedIds.length > 0)
     ) {
       e.preventDefault();
-      delSel();
+      removeUnlockedSelected();
       return;
     }
     if (e.key === "Escape" && s.groupEditId) {
@@ -2225,6 +2488,7 @@ export function initUI() {
   setupOptions();
   buildPopupSwatches();
   setupPopupHandlers();
+  setupContextMenu();
   setupPointerEvents();
   setupKeyboard();
   applySettingsToUI();
