@@ -73,6 +73,8 @@ export const state = {
 
   locateEnd: 0,
 
+  currentBoardId: 'default',
+
   viewBookmarks: [],
 
   settings: {

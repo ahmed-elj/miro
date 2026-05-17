@@ -78,6 +78,8 @@ var TOOL_META = [
 var MAX_VIEW_BOOKMARKS = 20;
 var VIEW_BOOKMARK_THUMB_W = 160;
 var VIEW_BOOKMARK_THUMB_H = 96;
+var BOARD_INDEX_KEY = STORAGE_KEY + "-boards";
+var DEFAULT_BOARD_ID = "default";
 
 function codeToLabel(code) {
   if (!code) return "None";
@@ -1367,6 +1369,231 @@ function updateKeybindList() {
   });
 }
 
+function boardStorageKey(id) {
+  return STORAGE_KEY + ":board:" + id;
+}
+
+function nextBoardId() {
+  return "board-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+function cloneSettings(settings) {
+  return JSON.parse(JSON.stringify(settings || state.settings));
+}
+
+function serializeCurrentBoard() {
+  return {
+    version: 1,
+    objects: objects,
+    nid: state.nid,
+    cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
+    settings: state.settings,
+    viewBookmarks: state.viewBookmarks,
+  };
+}
+
+function normalizeBoardName(name) {
+  var trimmed = (name || "").trim();
+  return trimmed || "Untitled Board";
+}
+
+function loadBoardIndex() {
+  try {
+    var raw = localStorage.getItem(BOARD_INDEX_KEY);
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.boards)) {
+        var boards = parsed.boards.filter(function (board) {
+          return board && typeof board.id === "string" && typeof board.name === "string";
+        }).map(function (board) {
+          return {
+            id: board.id,
+            name: board.name,
+            updatedAt: Number.isFinite(board.updatedAt) ? board.updatedAt : Date.now(),
+          };
+        });
+        if (boards.length) {
+          return {
+            activeId: typeof parsed.activeId === "string" ? parsed.activeId : boards[0].id,
+            boards: boards,
+          };
+        }
+      }
+    }
+  } catch (e) {}
+  return {
+    activeId: DEFAULT_BOARD_ID,
+    boards: [{ id: DEFAULT_BOARD_ID, name: "Board 1", updatedAt: Date.now() }],
+  };
+}
+
+function saveBoardIndex(index) {
+  try {
+    localStorage.setItem(BOARD_INDEX_KEY, JSON.stringify(index));
+  } catch (e) {}
+}
+
+function upsertBoardMeta(id, name) {
+  var index = loadBoardIndex();
+  var found = false;
+  index.boards.forEach(function (board) {
+    if (board.id === id) {
+      board.name = name || board.name;
+      board.updatedAt = Date.now();
+      found = true;
+    }
+  });
+  if (!found) {
+    index.boards.push({ id: id, name: name || "Untitled Board", updatedAt: Date.now() });
+  }
+  index.activeId = id;
+  saveBoardIndex(index);
+  renderBoardList();
+}
+
+function renderBoardList() {
+  var select = document.getElementById("boardSelect");
+  if (!select) return;
+  var index = loadBoardIndex();
+  select.innerHTML = "";
+  index.boards.slice().sort(function (a, b) {
+    return b.updatedAt - a.updatedAt;
+  }).forEach(function (board) {
+    var opt = document.createElement("option");
+    opt.value = board.id;
+    opt.textContent = board.name;
+    select.appendChild(opt);
+  });
+  select.value = state.currentBoardId || index.activeId;
+}
+
+function applyBoardData(data, fallbackSettings) {
+  if (!data || !Array.isArray(data.objects)) return false;
+  objects.length = 0;
+  data.objects.forEach(function (o) { objects.push(o); });
+  state.nid = data.nid || 1;
+  cam.x = data.cam && Number.isFinite(data.cam.x) ? data.cam.x : window.innerWidth / 2;
+  cam.y = data.cam && Number.isFinite(data.cam.y) ? data.cam.y : window.innerHeight / 2;
+  cam.zoom = data.cam && Number.isFinite(data.cam.zoom) ? data.cam.zoom : 1;
+  mergeSettings(data.settings || fallbackSettings);
+  mergeViewBookmarks(data.viewBookmarks);
+  state.undoSt = [];
+  state.redoSt = [];
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  state.isDrawing = false;
+  state.dragMode = null;
+  state.isEditing = false;
+  refreshImgCache();
+  applySettingsToUI();
+  updateZoomDisplay();
+  renderViewBookmarks();
+  requestRender();
+  return true;
+}
+
+function loadBoardById(id) {
+  if (state.isEditing) finishEditing();
+  saveToStorage();
+  var raw = localStorage.getItem(boardStorageKey(id));
+  if (!raw && id === DEFAULT_BOARD_ID) raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    showToast("Board not found");
+    return false;
+  }
+  try {
+    var data = JSON.parse(raw);
+    if (!applyBoardData(data)) throw new Error("Invalid board");
+    state.currentBoardId = id;
+    var index = loadBoardIndex();
+    index.activeId = id;
+    saveBoardIndex(index);
+    renderBoardList();
+    saveToStorage();
+    showToast("Board loaded");
+    return true;
+  } catch (e) {
+    showToast("Could not load board");
+  }
+  return false;
+}
+
+function createNewBoard() {
+  if (state.isEditing) finishEditing();
+  saveToStorage();
+  var name = normalizeBoardName(window.prompt("Board name", "Untitled Board"));
+  var id = nextBoardId();
+  state.currentBoardId = id;
+  objects.length = 0;
+  state.nid = 1;
+  state.viewBookmarks = [];
+  state.undoSt = [];
+  state.redoSt = [];
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  cam.x = window.innerWidth / 2;
+  cam.y = window.innerHeight / 2;
+  cam.zoom = 1;
+  mergeSettings(cloneSettings(state.settings));
+  updateZoomDisplay();
+  renderViewBookmarks();
+  requestRender();
+  upsertBoardMeta(id, name);
+  saveToStorage();
+  showToast("New board created");
+}
+
+function loadSelectedBoard() {
+  var select = document.getElementById("boardSelect");
+  if (select && select.value) loadBoardById(select.value);
+}
+
+function exportCurrentBoard() {
+  if (state.isEditing) finishEditing();
+  saveToStorage();
+  var index = loadBoardIndex();
+  var meta = index.boards.find(function (board) { return board.id === state.currentBoardId; });
+  var name = meta ? meta.name : "whiteboard";
+  var data = serializeCurrentBoard();
+  data.name = name;
+  data.exportedAt = new Date().toISOString();
+  var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  var link = document.createElement("a");
+  var safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "whiteboard";
+  link.download = safeName + ".whiteboard.json";
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+  showToast("Board exported");
+}
+
+function importBoardFile(file) {
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      if (!data || !Array.isArray(data.objects)) throw new Error("Invalid board");
+      if (state.isEditing) finishEditing();
+      saveToStorage();
+      var id = nextBoardId();
+      var name = normalizeBoardName(data.name || file.name.replace(/\.whiteboard\.json$|\.json$/i, ""));
+      state.currentBoardId = id;
+      if (!applyBoardData(data)) throw new Error("Invalid board");
+      upsertBoardMeta(id, name);
+      saveToStorage();
+      showToast("Board loaded from file");
+    } catch (err) {
+      showToast("Could not load board file");
+    }
+  };
+  reader.readAsText(file);
+}
+
 function setToolShortcut(tool, code) {
   var map = state.settings.keyMap;
   Object.keys(map).forEach(function (existingCode) {
@@ -1474,7 +1701,18 @@ function setupOptions() {
     requestRender();
     saveToStorage();
   });
+  document.getElementById("newBoardBtn").addEventListener("click", createNewBoard);
+  document.getElementById("loadBoardBtn").addEventListener("click", loadSelectedBoard);
+  document.getElementById("exportBoardBtn").addEventListener("click", exportCurrentBoard);
+  document.getElementById("importBoardBtn").addEventListener("click", function () {
+    document.getElementById("importBoardInput").click();
+  });
+  document.getElementById("importBoardInput").addEventListener("change", function (e) {
+    importBoardFile(e.target.files[0]);
+    e.target.value = "";
+  });
   document.getElementById("resetOptions").addEventListener("click", resetSettings);
+  renderBoardList();
   updateKeybindList();
 }
 
@@ -1819,16 +2057,24 @@ function setupKeyboard() {
 // ── Persistence ──
 export function saveToStorage() {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        objects: objects,
-        nid: state.nid,
-        cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
-        settings: state.settings,
-        viewBookmarks: state.viewBookmarks,
-      }),
-    );
+    var data = serializeCurrentBoard();
+    var raw = JSON.stringify(data);
+    localStorage.setItem(STORAGE_KEY, raw);
+    localStorage.setItem(boardStorageKey(state.currentBoardId || DEFAULT_BOARD_ID), raw);
+    var index = loadBoardIndex();
+    index.activeId = state.currentBoardId || DEFAULT_BOARD_ID;
+    var found = false;
+    index.boards.forEach(function (board) {
+      if (board.id === index.activeId) {
+        board.updatedAt = Date.now();
+        found = true;
+      }
+    });
+    if (!found) {
+      index.boards.push({ id: index.activeId, name: "Board 1", updatedAt: Date.now() });
+    }
+    saveBoardIndex(index);
+    renderBoardList();
   } catch (e) {}
 }
 
@@ -1893,24 +2139,20 @@ function mergeViewBookmarks(saved) {
 
 export function loadFromStorage() {
   try {
-    var raw = localStorage.getItem(STORAGE_KEY);
+    var index = loadBoardIndex();
+    var activeId = index.activeId || DEFAULT_BOARD_ID;
+    var raw = localStorage.getItem(boardStorageKey(activeId));
+    if (!raw) raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
     var data = JSON.parse(raw);
-    if (data && Array.isArray(data.objects)) {
-      objects.length = 0;
-      data.objects.forEach(function (o) {
-        objects.push(o);
-      });
-      if (data.nid) state.nid = data.nid;
-      if (data.cam) {
-        cam.x = data.cam.x;
-        cam.y = data.cam.y;
-        cam.zoom = data.cam.zoom;
+    if (applyBoardData(data)) {
+      state.currentBoardId = activeId;
+      var activeMeta = index.boards.find(function (board) { return board.id === activeId; });
+      upsertBoardMeta(activeId, activeMeta ? activeMeta.name : "Board 1");
+      if (!localStorage.getItem(boardStorageKey(activeId))) {
+        localStorage.setItem(boardStorageKey(activeId), JSON.stringify(serializeCurrentBoard()));
       }
-      mergeSettings(data.settings);
-      mergeViewBookmarks(data.viewBookmarks);
-      applySettingsToUI();
-      renderViewBookmarks();
+      renderBoardList();
       return true;
     }
   } catch (e) {}

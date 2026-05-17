@@ -65,6 +65,22 @@
       </label>
     </div>
     <div class="options-section">
+      <div class="option-title">Boards</div>
+      <div class="board-manager">
+        <label class="option-field">
+          <span>Current Board</span>
+          <select id="boardSelect"></select>
+        </label>
+        <div class="board-actions">
+          <button class="board-btn" id="newBoardBtn" type="button"><i class="fa-solid fa-plus"></i><span>New</span></button>
+          <button class="board-btn" id="loadBoardBtn" type="button"><i class="fa-solid fa-folder-open"></i><span>Load</span></button>
+          <button class="board-btn" id="exportBoardBtn" type="button"><i class="fa-solid fa-file-export"></i><span>Export</span></button>
+        </div>
+        <button class="board-btn board-btn-wide" id="importBoardBtn" type="button"><i class="fa-solid fa-file-import"></i><span>Load from file</span></button>
+        <input type="file" id="importBoardInput" accept="application/json,.json" style="display:none;">
+      </div>
+    </div>
+    <div class="options-section">
       <div class="option-title">Tool Shortcuts</div>
       <div id="keybindList" class="keybind-list"></div>
     </div>

@@ -262,6 +262,7 @@ canvas#board {
 
 .options-close,
 .options-reset,
+.board-btn,
 .keybind-btn {
   border: 1px solid var(--border);
   background: transparent;
@@ -279,6 +280,7 @@ canvas#board {
 
 .options-close:hover,
 .options-reset:hover,
+.board-btn:hover,
 .keybind-btn:hover {
   background: var(--border);
 }
@@ -341,6 +343,34 @@ canvas#board {
   color: var(--fg);
   font-family: var(--font-family);
   padding: 0 8px;
+}
+
+.board-manager {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.board-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.board-btn {
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.board-btn-wide {
+  width: 100%;
 }
 
 .keybind-list {
