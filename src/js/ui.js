@@ -164,6 +164,63 @@ function applyThemeVars() {
   root.style.setProperty("--shadow-popup", preset.shadowPopup);
 }
 
+function parseHexColor(hex) {
+  if (typeof hex !== "string") return null;
+  var raw = hex.trim().replace(/^#/, "");
+  if (raw.length === 3) raw = raw.split("").map(function (ch) { return ch + ch; }).join("");
+  if (raw.length !== 6 && raw.length !== 8) return null;
+  if (!/^[0-9a-fA-F]+$/.test(raw)) return null;
+  return {
+    r: parseInt(raw.slice(0, 2), 16),
+    g: parseInt(raw.slice(2, 4), 16),
+    b: parseInt(raw.slice(4, 6), 16),
+    alpha: raw.length === 8 ? raw.slice(6, 8) : "",
+  };
+}
+
+function colorLuminance(hex) {
+  var rgb = parseHexColor(hex);
+  if (!rgb) return null;
+  function channel(v) {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+function remapThemeColor(color, theme) {
+  var lum = colorLuminance(color);
+  if (lum === null) return color;
+  var target = getThemePreset(theme).objectColor;
+  var alpha = parseHexColor(color).alpha;
+  if (theme === "white" && lum > 0.72) return target + alpha;
+  if (theme === "dark" && lum < 0.22) return target + alpha;
+  return color;
+}
+
+function remapObjectColorsForTheme(theme, recordUndo) {
+  var changed = false;
+  function assign(obj, key) {
+    if (!obj || typeof obj[key] !== "string") return;
+    var next = remapThemeColor(obj[key], theme);
+    if (next !== obj[key]) {
+      if (recordUndo && !changed) saveState();
+      obj[key] = next;
+      changed = true;
+    }
+  }
+  objects.forEach(function (obj) {
+    assign(obj, "color");
+    assign(obj, "fillColor");
+    if (obj.type === "text" && Array.isArray(obj.spans)) {
+      obj.spans.forEach(function (span) {
+        assign(span, "color");
+      });
+    }
+  });
+  return changed;
+}
+
 function syncTopbarColorSelection() {
   document.querySelectorAll(".color-swatch").forEach(function (sw) {
     sw.classList.toggle("active", sw.dataset.color === state.curColor);
@@ -172,6 +229,8 @@ function syncTopbarColorSelection() {
 
 function applyThemeDefaults(theme) {
   var preset = getThemePreset(theme);
+  var nextTheme = THEME_PRESETS[theme] ? theme : "dark";
+  remapObjectColorsForTheme(nextTheme, true);
   state.settings.theme = THEME_PRESETS[theme] ? theme : "dark";
   state.settings.canvasColor = preset.canvasColor;
   state.settings.gridColor = preset.gridColor;
