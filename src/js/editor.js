@@ -22,7 +22,11 @@ export function spansToHtml(spans) {
     lines.forEach(function(line, li) {
       if (li > 0) parts.push('<br>');
       if (!line) return;
-      var h = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var h = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/-/g, '&#8288;-&#8288;');
       if (s.italic) h = '<i>' + h + '</i>';
       if (s.bold) h = '<b>' + h + '</b>';
       if (s.underline) h = '<u>' + h + '</u>';
@@ -37,7 +41,7 @@ export function parseHtmlSpans(el, defColor) {
   var spans = [];
   function walk(node, b, it, un, col) {
     if (node.nodeType === Node.TEXT_NODE) {
-      var t = node.textContent;
+      var t = node.textContent.replace(/\u2060/g, '');
       if (t) spans.push({ text: t, bold: b, italic: it, underline: un, color: col });
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       var tag = node.tagName.toLowerCase();
