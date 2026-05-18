@@ -2598,7 +2598,25 @@ function onPointerUp(e) {
 function onWheel(e) {
   e.preventDefault();
   var r = canvas.getBoundingClientRect();
-  zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.08 : 1 / 1.08);
+  var sx = e.clientX - r.left;
+  var sy = e.clientY - r.top;
+  var unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? window.innerHeight : 1;
+  var dx = e.deltaX * unit;
+  var dy = e.deltaY * unit;
+
+  if (e.ctrlKey || e.metaKey) {
+    var zoomFactor = Math.pow(1.01, -dy);
+    zoomAt(sx, sy, zoomFactor);
+    return;
+  }
+
+  if (e.shiftKey && Math.abs(dx) < 0.01) {
+    dx = dy;
+    dy = 0;
+  }
+  cam.x += dx;
+  cam.y += dy;
+  requestRender();
 }
 
 // ── Select all objects ──
