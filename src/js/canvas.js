@@ -455,6 +455,7 @@ function drawHandles(c) {
     if (objects[i].id === s.selectedId) { obj = objects[i]; break; }
   }
   if (!obj) return;
+  if (obj.type === 'comment' && s.commentHandlesId !== obj.id) return;
   var b = getBounds(obj);
   if (!b) return;
   c.save();

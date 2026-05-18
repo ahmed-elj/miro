@@ -294,6 +294,7 @@ export function setToolActive(t) {
   s.selectedIds = [];
   s.groupEditId = null;
   s.groupEditCandidateId = null;
+  s.commentHandlesId = null;
   closeCommentPanel();
   updateCursor();
   requestRender();
@@ -843,6 +844,7 @@ function selectObjectForContext(obj) {
     state.selectedId = null;
     state.selectedIds = [];
     state._lastPopupId = null;
+    state.commentHandlesId = null;
     closeCommentPanel();
     return;
   }
@@ -888,6 +890,7 @@ function removeUnlockedSelected() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentHandlesId = null;
   closeCommentPanel();
   requestRender();
   return true;
@@ -959,6 +962,7 @@ function pasteClipboard(atWorld) {
   state.selectedIds = newIds;
   state.selectedId = newIds.length ? newIds[newIds.length - 1] : null;
   state._lastPopupId = null;
+  state.commentHandlesId = null;
   closeCommentPanel();
   refreshImgCache();
   requestRender();
@@ -2319,6 +2323,8 @@ function applyBoardData(data, fallbackSettings) {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
+  state.commentHandlesId = null;
   state.isDrawing = false;
   state.dragMode = null;
   state.isEditing = false;
@@ -2371,6 +2377,8 @@ function createNewBoard() {
     state.selectedIds = [];
     state.groupEditId = null;
     state.groupEditCandidateId = null;
+    state.commentPanelId = null;
+    state.commentHandlesId = null;
     cam.x = window.innerWidth / 2;
     cam.y = window.innerHeight / 2;
     cam.zoom = 1;
@@ -2448,6 +2456,8 @@ function createEmptyDefaultBoard() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
+  state.commentHandlesId = null;
   cam.x = window.innerWidth / 2;
   cam.y = window.innerHeight / 2;
   cam.zoom = 1;
@@ -2797,6 +2807,15 @@ function setupPointerEvents() {
         startEditExisting(obj);
         return;
       }
+      if (obj.type === "comment" && hitTest(obj, wp.x, wp.y)) {
+        s.selectedId = obj.id;
+        s.selectedIds = [obj.id];
+        s.commentHandlesId = obj.id;
+        s._lastPopupId = null;
+        openCommentPanel(obj);
+        requestRender();
+        return;
+      }
     }
   });
 
@@ -3045,7 +3064,10 @@ function onPointerUp(e) {
     else if (!s.dragUndo && s.cycleHits) cycleSelect();
     if (!s.dragUndo) {
       var selectedComment = findObj(s.selectedId);
-      if (selectedComment && selectedComment.type === "comment") openCommentPanel(selectedComment);
+      if (selectedComment && selectedComment.type === "comment") {
+        s.commentHandlesId = null;
+        openCommentPanel(selectedComment);
+      }
       else if (!clickedComment) closeCommentPanel();
     }
     s.dragMode = null;
@@ -3220,6 +3242,7 @@ function setupKeyboard() {
     if (e.key === "Escape" && s.selectedIds.length > 0) {
       s.selectedId = null;
       s.selectedIds = [];
+      s.commentHandlesId = null;
       requestRender();
       return;
     }

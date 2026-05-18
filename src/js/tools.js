@@ -75,6 +75,7 @@ export function selectTopAt(wp) {
   state.groupEditId = null;
   state.groupEditCandidateId = null;
   state.commentPanelId = null;
+  state.commentHandlesId = null;
   requestRender();
   return false;
 }
@@ -158,6 +159,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
         s.selectedIds = s.selectedIds.filter(function(id) { return linkedClicked.indexOf(id) < 0; });
         if (s.selectedIds.length === 0) {
           s.selectedId = null;
+          s.commentHandlesId = null;
         } else {
           s.selectedId = s.selectedIds[s.selectedIds.length - 1];
         }
@@ -386,6 +388,7 @@ export function finishBoxSelect(shiftKey) {
     s.selectedIds = [];
     s.groupEditId = null;
     s.groupEditCandidateId = null;
+    s.commentHandlesId = null;
     requestRender();
     return;
   }
@@ -415,6 +418,7 @@ export function finishBoxSelect(shiftKey) {
     s.selectedId = s.selectedIds[s.selectedIds.length - 1];
   } else {
     s.selectedId = null;
+    s.commentHandlesId = null;
   }
   s._lastPopupId = null;
   requestRender();
@@ -1443,6 +1447,8 @@ export function clearAll() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
+  state.commentHandlesId = null;
   requestRender();
   showToast('Canvas cleared');
 }

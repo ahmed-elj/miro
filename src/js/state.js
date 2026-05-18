@@ -86,6 +86,7 @@ export const state = {
   lastPointerWorld: null,
   pendingInternalPaste: false,
   commentPanelId: null,
+  commentHandlesId: null,
   wheelInputMode: null,
   wheelMouseScore: 0,
   wheelTrackpadScore: 0,
