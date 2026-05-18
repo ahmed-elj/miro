@@ -2007,18 +2007,26 @@ function upsertBoardMeta(id, name) {
 
 function renderBoardList() {
   var select = document.getElementById("boardSelect");
-  if (!select) return;
+  var label = document.getElementById("boardMenuName");
   var index = loadBoardIndex();
-  select.innerHTML = "";
-  index.boards.slice().sort(function (a, b) {
+  var activeId = state.currentBoardId || index.activeId;
+  var sortedBoards = index.boards.slice().sort(function (a, b) {
     return b.updatedAt - a.updatedAt;
-  }).forEach(function (board) {
-    var opt = document.createElement("option");
-    opt.value = board.id;
-    opt.textContent = board.name;
-    select.appendChild(opt);
   });
-  select.value = state.currentBoardId || index.activeId;
+  if (select) {
+    select.innerHTML = "";
+    sortedBoards.forEach(function (board) {
+      var opt = document.createElement("option");
+      opt.value = board.id;
+      opt.textContent = board.name;
+      select.appendChild(opt);
+    });
+    select.value = activeId;
+  }
+  if (label) {
+    var activeBoard = index.boards.find(function (board) { return board.id === activeId; });
+    label.textContent = activeBoard ? activeBoard.name : "Board 1";
+  }
 }
 
 function applyBoardData(data, fallbackSettings) {
@@ -2148,6 +2156,11 @@ function importBoardFile(file) {
   reader.readAsText(file);
 }
 
+function closeBoardMenu() {
+  var menu = document.getElementById("boardMenu");
+  if (menu) menu.classList.remove("open");
+}
+
 function setToolShortcut(tool, code) {
   var map = state.settings.keyMap;
   Object.keys(map).forEach(function (existingCode) {
@@ -2264,8 +2277,23 @@ function setupOptions() {
     requestRender();
     saveToStorage();
   });
-  document.getElementById("newBoardBtn").addEventListener("click", createNewBoard);
-  document.getElementById("loadBoardBtn").addEventListener("click", loadSelectedBoard);
+  document.getElementById("boardMenuBtn").addEventListener("click", function (e) {
+    e.stopPropagation();
+    document.getElementById("boardMenu").classList.toggle("open");
+  });
+  document.getElementById("boardMenu").addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+  });
+  window.addEventListener("pointerdown", closeBoardMenu);
+  window.addEventListener("blur", closeBoardMenu);
+  document.getElementById("newBoardBtn").addEventListener("click", function () {
+    createNewBoard();
+    closeBoardMenu();
+  });
+  document.getElementById("loadBoardBtn").addEventListener("click", function () {
+    loadSelectedBoard();
+    closeBoardMenu();
+  });
   document.getElementById("exportBoardBtn").addEventListener("click", exportCurrentBoard);
   document.getElementById("importBoardBtn").addEventListener("click", function () {
     document.getElementById("importBoardInput").click();
@@ -2273,6 +2301,7 @@ function setupOptions() {
   document.getElementById("importBoardInput").addEventListener("change", function (e) {
     importBoardFile(e.target.files[0]);
     e.target.value = "";
+    closeBoardMenu();
   });
   document.getElementById("resetOptions").addEventListener("click", resetSettings);
   renderBoardList();

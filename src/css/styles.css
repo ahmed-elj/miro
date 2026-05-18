@@ -45,6 +45,90 @@ canvas#board {
   display: block;
 }
 
+/* === Board Menu === */
+#boardMenu {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 28;
+}
+
+#boardMenuBtn {
+  max-width: 280px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: var(--shadow-panel);
+  font-family: var(--font-family);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+#boardMenuBtn:hover,
+#boardMenu.open #boardMenuBtn {
+  border-color: var(--accent);
+}
+
+#boardMenuName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-menu-chevron {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+#boardMenuPanel {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  width: 280px;
+  display: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popup);
+  padding: 10px;
+}
+
+#boardMenu.open #boardMenuPanel {
+  display: grid;
+  gap: 9px;
+}
+
+.board-menu-field {
+  display: grid;
+  gap: 6px;
+}
+
+.board-menu-field span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.board-menu-field select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family);
+  padding: 0 8px;
+}
+
 /* === Toolbar (left sidebar) === */
 #toolbar {
   position: absolute;

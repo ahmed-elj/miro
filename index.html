@@ -13,6 +13,27 @@
   <div id="eraserCursor"></div>
   <input type="file" id="imageInput" accept="image/*">
 
+  <div id="boardMenu">
+    <button id="boardMenuBtn" type="button" title="Boards">
+      <i class="fa-solid fa-layer-group"></i>
+      <span id="boardMenuName">Board 1</span>
+      <i class="fa-solid fa-chevron-down board-menu-chevron"></i>
+    </button>
+    <div id="boardMenuPanel">
+      <label class="board-menu-field">
+        <span>Current Board</span>
+        <select id="boardSelect"></select>
+      </label>
+      <div class="board-actions">
+        <button class="board-btn" id="newBoardBtn" type="button"><i class="fa-solid fa-plus"></i><span>New</span></button>
+        <button class="board-btn" id="loadBoardBtn" type="button"><i class="fa-solid fa-folder-open"></i><span>Load</span></button>
+        <button class="board-btn" id="exportBoardBtn" type="button"><i class="fa-solid fa-file-export"></i><span>Export</span></button>
+      </div>
+      <button class="board-btn board-btn-wide" id="importBoardBtn" type="button"><i class="fa-solid fa-file-import"></i><span>Load from file</span></button>
+      <input type="file" id="importBoardInput" accept="application/json,.json" style="display:none;">
+    </div>
+  </div>
+
   <nav id="toolbar" aria-label="Drawing tools">
     <button class="tool-btn active" data-tool="select" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i><span class="shortcut">V</span></button>
     <button class="tool-btn" data-tool="hand" title="Pan (H)"><i class="fa-solid fa-hand"></i><span class="shortcut">H</span></button>
@@ -72,22 +93,6 @@
           <option value="none">None</option>
         </select>
       </label>
-    </div>
-    <div class="options-section">
-      <div class="option-title">Boards</div>
-      <div class="board-manager">
-        <label class="option-field">
-          <span>Current Board</span>
-          <select id="boardSelect"></select>
-        </label>
-        <div class="board-actions">
-          <button class="board-btn" id="newBoardBtn" type="button"><i class="fa-solid fa-plus"></i><span>New</span></button>
-          <button class="board-btn" id="loadBoardBtn" type="button"><i class="fa-solid fa-folder-open"></i><span>Load</span></button>
-          <button class="board-btn" id="exportBoardBtn" type="button"><i class="fa-solid fa-file-export"></i><span>Export</span></button>
-        </div>
-        <button class="board-btn board-btn-wide" id="importBoardBtn" type="button"><i class="fa-solid fa-file-import"></i><span>Load from file</span></button>
-        <input type="file" id="importBoardInput" accept="application/json,.json" style="display:none;">
-      </div>
     </div>
     <div class="options-section">
       <div class="option-title">Tool Shortcuts</div>
