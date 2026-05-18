@@ -85,6 +85,11 @@ export const state = {
   contextPastePoint: null,
   lastPointerWorld: null,
   pendingInternalPaste: false,
+  commentPanelId: null,
+  wheelInputMode: null,
+  wheelMouseScore: 0,
+  wheelTrackpadScore: 0,
+  wheelModeToast: null,
 
   settings: {
     theme: DEFAULT_SETTINGS.theme,

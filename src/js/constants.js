@@ -38,6 +38,7 @@ export const KEY_MAP = {
   KeyO: 'ellipse',
   KeyT: 'text',
   KeyS: 'sticky',
+  KeyC: 'comment',
 };
 
 export const DEFAULT_SETTINGS = {
@@ -94,6 +95,7 @@ export const CURSOR_MAP = {
   text: 'cursor-text',
   sticky: 'cursor-crosshair',
   image: 'cursor-crosshair',
+  comment: 'cursor-crosshair',
 };
 
 /** localStorage key for auto-save */

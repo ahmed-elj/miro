@@ -9,6 +9,7 @@ import { requestRender, drawObject } from './canvas.js';
 import { getBounds, getRotatedBounds, hitTest, hitBorder, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, findObj } from './undo.js';
+import { createCommentBubble, openCommentPanel } from './comments.js';
 
 function getLinkedSelectionIds(id) {
   var obj = findObj(id);
@@ -73,6 +74,7 @@ export function selectTopAt(wp) {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
   requestRender();
   return false;
 }
@@ -124,7 +126,7 @@ function hitScore(obj, wx, wy, zIndex) {
   var score = zIndex * 0.0001;
   if (borderHit) score += 1000;
   else if (obj.type === 'text') score += 120;
-  else if (obj.fill || obj.type === 'sticky' || obj.type === 'image') score += 300;
+  else if (obj.fill || obj.type === 'sticky' || obj.type === 'image' || obj.type === 'comment') score += 300;
   else score += 80;
   score -= boundsDistanceToPoint(b, wx, wy) * cam.zoom;
   return { obj: obj, score: score };
@@ -829,7 +831,7 @@ export function handleDrag(wp, freeResize) {
     moveObjectBy(obj2, snap2, dx, dy);
   } else if (s.dragMode.startsWith('resize-')) {
     var ms = 10 / cam.zoom;
-    if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image') {
+    if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image' || obj2.type === 'comment') {
       applyResize(obj2, snap2, dx, dy, ms, preserveAspect);
     } else if (obj2.type === 'sticky') {
       applyStickyResize(obj2, snap2, dx, dy, preserveAspect);
@@ -1170,6 +1172,17 @@ export function startStickyCreate(wp) {
   ed.dataset.wx = wp.x; ed.dataset.wy = wp.y; ed.dataset.bgColor = bg;
   ed.dataset.w = ww; ed.dataset.h = wh; ed.dataset.wfs = 16 / cam.zoom;
   setTimeout(function() { ed.focus(); }, 80);
+}
+
+export function startCommentCreate(wp) {
+  var id = gid();
+  var obj = createCommentBubble(id, wp);
+  addObj(obj);
+  state.selectedId = id;
+  state.selectedIds = [id];
+  state._lastPopupId = null;
+  openCommentPanel(obj);
+  requestRender();
 }
 
 // ── Edit existing text/sticky ──

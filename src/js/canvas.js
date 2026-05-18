@@ -9,6 +9,7 @@ import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constan
 import { s2w, roundedRect, wrapLine, hexToRgba, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
 import { getBounds, getGroupBounds, getRotatedBounds, getArrowTangentVector } from './objects.js';
 import { getTextLayout, measureTextLine, textFont } from './textLayout.js';
+import { drawCommentBubble } from './comments.js';
 
 let rafPending = false;
 export function requestRender() {
@@ -112,6 +113,7 @@ export function drawObject(c, obj) {
     case 'text': drawText(c, obj); break;
     case 'sticky': drawSticky(c, obj); break;
     case 'image': drawImageObj(c, obj); break;
+    case 'comment': drawCommentBubble(c, obj); break;
   }
   c.restore();
 }

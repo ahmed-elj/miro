@@ -46,6 +46,7 @@
     <div class="tool-sep"></div>
     <button class="tool-btn" data-tool="text" title="Text (T)"><i class="fa-solid fa-t"></i><span class="shortcut">T</span></button>
     <button class="tool-btn" data-tool="sticky" title="Sticky Note (S)"><i class="fa-solid fa-note-sticky"></i><span class="shortcut">S</span></button>
+    <button class="tool-btn" data-tool="comment" title="Comment (C)"><i class="fa-solid fa-comment"></i><span class="shortcut">C</span></button>
     <button class="tool-btn" data-tool="image" title="Image"><i class="fa-solid fa-image"></i></button>
   </nav>
 
@@ -248,6 +249,20 @@
 
   <div id="textEditor" contenteditable="true" spellcheck="false"></div>
   <textarea id="stickyEditor" spellcheck="false"></textarea>
+  <aside id="commentPanel" aria-label="Comments">
+    <div class="comment-panel-head">
+      <div>
+        <h2>Comments</h2>
+        <span id="commentPanelMeta">0 comments</span>
+      </div>
+      <button id="commentPanelClose" type="button" title="Close comments"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="commentList"></div>
+    <form id="commentForm">
+      <textarea id="commentInput" placeholder="Add a comment with #tags" rows="3"></textarea>
+      <button type="submit"><i class="fa-solid fa-paper-plane"></i><span>Add</span></button>
+    </form>
+  </aside>
   <div id="toasts"></div>
 
   <script type="module" src="/src/main.js"></script>

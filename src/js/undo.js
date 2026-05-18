@@ -22,6 +22,7 @@ export function undo() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
   refreshImgCache();
   requestRender();
 }
@@ -36,6 +37,7 @@ export function redo() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  state.commentPanelId = null;
   refreshImgCache();
   requestRender();
 }
@@ -58,6 +60,7 @@ export function delSel() {
   s.selectedIds = [];
   s.groupEditId = null;
   s.groupEditCandidateId = null;
+  s.commentPanelId = null;
   requestRender();
 }
 

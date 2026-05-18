@@ -41,6 +41,7 @@ import {
   startTextCreate,
   startTextTool,
   startStickyCreate,
+  startCommentCreate,
   startEditExisting,
   finishEditing,
   enterGroupEditForObject,
@@ -61,6 +62,7 @@ import {
   insertImg,
   exportPNG,
 } from "./tools.js";
+import { setupCommentPanel, openCommentPanel, closeCommentPanel, syncCommentPanelPosition } from "./comments.js";
 
 var TOOL_META = [
   { tool: "select", label: "Select" },
@@ -73,6 +75,7 @@ var TOOL_META = [
   { tool: "ellipse", label: "Ellipse" },
   { tool: "text", label: "Text" },
   { tool: "sticky", label: "Sticky Note" },
+  { tool: "comment", label: "Comment" },
   { tool: "image", label: "Image" },
 ];
 
@@ -291,6 +294,7 @@ export function setToolActive(t) {
   s.selectedIds = [];
   s.groupEditId = null;
   s.groupEditCandidateId = null;
+  closeCommentPanel();
   updateCursor();
   requestRender();
 }
@@ -453,6 +457,7 @@ function syncPaletteRows(hasColor, hasSticky) {
 function updatePopup() {
   var s = state;
   updateEditorPosition();
+  syncCommentPanelPosition();
   var pop = document.getElementById("itemPopup");
   var isTextEdit =
     s.isEditing &&
@@ -542,6 +547,7 @@ function updatePopup() {
     return;
   }
   if (s.selectedIds.length > 1) {
+    closeCommentPanel();
     // Multiselect popup — show limited controls
     var allBounds = [];
     s.selectedIds.forEach(function (id) {
@@ -599,12 +605,14 @@ function updatePopup() {
   if (s.selectedId === null || s.isEditing) {
     pop.classList.remove("visible");
     s._lastPopupId = null;
+    if (s.selectedId === null) closeCommentPanel();
     return;
   }
   var selObj = findObj(s.selectedId);
   if (!selObj) {
     pop.classList.remove("visible");
     s._lastPopupId = null;
+    closeCommentPanel();
     return;
   }
   var b = getRotatedBounds(selObj);
@@ -614,6 +622,24 @@ function updatePopup() {
   }
   var dropdownOpen = document.querySelector(".pop-dropdown.open");
   pop.classList.add("visible");
+  if (selObj.type === "comment") {
+    document.getElementById("popTextRow").style.display = "none";
+    syncPaletteRows(false, false);
+    document.getElementById("popArrowRow").style.display = "none";
+    document.getElementById("popGroupRow").style.display = selObj.groupId ? "flex" : "none";
+    document.getElementById("popGroup").style.display = "none";
+    document.getElementById("popUngroup").style.display = selObj.groupId ? "flex" : "none";
+    document.getElementById("popEditText").style.display = "none";
+    document.getElementById("popStrokeBtn").style.display = "none";
+    document.getElementById("popFillBtn").style.display = "none";
+    syncPopupLockButton([selObj]);
+    document.getElementById("popOpacity").value = selObj.opacity != null ? selObj.opacity : 1;
+    document.getElementById("popOpacityVal").textContent =
+      Math.round((selObj.opacity != null ? selObj.opacity : 1) * 100) + "%";
+    if (!dropdownOpen) positionPopupNearBounds(pop, b, 80);
+    return;
+  }
+  closeCommentPanel();
   document.getElementById("popTextRow").style.display =
     selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
   syncPaletteRows(
@@ -817,6 +843,7 @@ function selectObjectForContext(obj) {
     state.selectedId = null;
     state.selectedIds = [];
     state._lastPopupId = null;
+    closeCommentPanel();
     return;
   }
   if (state.selectedIds.indexOf(obj.id) < 0) {
@@ -861,6 +888,7 @@ function removeUnlockedSelected() {
   state.selectedIds = [];
   state.groupEditId = null;
   state.groupEditCandidateId = null;
+  closeCommentPanel();
   requestRender();
   return true;
 }
@@ -931,6 +959,7 @@ function pasteClipboard(atWorld) {
   state.selectedIds = newIds;
   state.selectedId = newIds.length ? newIds[newIds.length - 1] : null;
   state._lastPopupId = null;
+  closeCommentPanel();
   refreshImgCache();
   requestRender();
   showToast("Pasted");
@@ -2914,6 +2943,9 @@ function onPointerDown(e) {
     case "sticky":
       startStickyCreate(wp);
       break;
+    case "comment":
+      startCommentCreate(wp);
+      break;
     case "image":
       document.getElementById("imageInput").click();
       break;
@@ -3002,9 +3034,20 @@ function onPointerUp(e) {
     }
   }
   if (s.dragMode) {
+    var clickedComment = null;
+    if (!s.dragUndo && s.cycleHits) {
+      clickedComment = s.cycleHits[s.cycleIdx] && s.cycleHits[s.cycleIdx].type === "comment"
+        ? s.cycleHits[s.cycleIdx]
+        : null;
+    }
     // If no undo was saved (no movement happened), treat as a click — cycle selection
     if (!s.dragUndo && s.groupEditCandidateId !== null) enterGroupEditForObject(s.groupEditCandidateId);
     else if (!s.dragUndo && s.cycleHits) cycleSelect();
+    if (!s.dragUndo) {
+      var selectedComment = findObj(s.selectedId);
+      if (selectedComment && selectedComment.type === "comment") openCommentPanel(selectedComment);
+      else if (!clickedComment) closeCommentPanel();
+    }
     s.dragMode = null;
     s.dragSW = null;
     s.dragSnap = null;
@@ -3038,6 +3081,21 @@ function onWheel(e) {
     return;
   }
 
+  var mode = detectWheelInputMode(e, dx, dy);
+  if (mode === "mouse") {
+    if (state.wheelModeToast !== "mouse") {
+      state.wheelModeToast = "mouse";
+      showToast("Mouse wheel detected: scroll to zoom");
+    }
+    var mouseZoomFactor = Math.pow(1.0018, -dy);
+    zoomAt(sx, sy, mouseZoomFactor);
+    return;
+  }
+  if (state.wheelModeToast !== "trackpad" && mode === "trackpad") {
+    state.wheelModeToast = "trackpad";
+    showToast("Trackpad detected: scroll pans, pinch zooms");
+  }
+
   if (e.shiftKey && Math.abs(dx) < 0.01) {
     dx = dy;
     dy = 0;
@@ -3045,6 +3103,31 @@ function onWheel(e) {
   cam.x += dx;
   cam.y += dy;
   requestRender();
+}
+
+function detectWheelInputMode(e, dx, dy) {
+  var ax = Math.abs(dx);
+  var ay = Math.abs(dy);
+  var primary = Math.max(ax, ay);
+  var hasFraction = Math.abs(e.deltaX % 1) > 0.001 || Math.abs(e.deltaY % 1) > 0.001;
+  var hasBothAxes = ax > 0.01 && ay > 0.01;
+  var looksMouse =
+    e.deltaMode === WheelEvent.DOM_DELTA_LINE ||
+    e.deltaMode === WheelEvent.DOM_DELTA_PAGE ||
+    (!hasFraction && !hasBothAxes && primary >= 40) ||
+    (!hasFraction && ay % 100 === 0 && ax < 0.01);
+
+  if (looksMouse) {
+    state.wheelMouseScore = Math.min(6, state.wheelMouseScore + 2);
+    state.wheelTrackpadScore = Math.max(0, state.wheelTrackpadScore - 1);
+  } else {
+    state.wheelTrackpadScore = Math.min(6, state.wheelTrackpadScore + 1);
+    state.wheelMouseScore = Math.max(0, state.wheelMouseScore - 1);
+  }
+
+  if (state.wheelMouseScore >= 3) state.wheelInputMode = "mouse";
+  else if (state.wheelTrackpadScore >= 3) state.wheelInputMode = "trackpad";
+  return state.wheelInputMode || (looksMouse ? "mouse" : "trackpad");
 }
 
 // ── Select all objects ──
@@ -3064,6 +3147,13 @@ function selectAll() {
 function setupKeyboard() {
   var s = state;
   window.addEventListener("keydown", function (e) {
+    if (e.target && e.target.closest && e.target.closest("#commentPanel")) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeCommentPanel();
+      }
+      return;
+    }
     if (document.getElementById("nameDialogBackdrop").classList.contains("open")) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -3295,6 +3385,12 @@ export function initUI() {
   setupOptions();
   buildPopupSwatches();
   setupPopupHandlers();
+  setupCommentPanel({
+    saveState: saveState,
+    requestRender: requestRender,
+    findObj: findObj,
+    saveToStorage: saveToStorage,
+  });
   setupContextMenu();
   setupPointerEvents();
   setupKeyboard();

@@ -6,6 +6,7 @@ import { cam, objects } from './state.js';
 import { HANDLE_HIT, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
 import { ptSegDist, getArrowCurvePoints, getArrowBendHandle, getArrowCurvePoint, getArrowControlPoint } from './utils.js';
 import { getTextLayout } from './textLayout.js';
+import { getCommentBounds, hitComment } from './comments.js';
 
 var textMeasureCanvas = document.createElement('canvas');
 var textMeasureCtx = textMeasureCanvas.getContext('2d');
@@ -60,6 +61,8 @@ export function getBounds(obj) {
     case 'sticky':
     case 'image':
       return { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+    case 'comment':
+      return getCommentBounds(obj);
   case 'text': {
   var tc = textMeasureCtx;
   var layout = getTextLayout(tc, obj, 'Open Sans');
@@ -137,6 +140,8 @@ export function hitTest(obj, wx, wy) {
     case 'image':
       return wx >= obj.x - pad && wx <= obj.x + obj.w + pad &&
              wy >= obj.y - pad && wy <= obj.y + obj.h + pad;
+    case 'comment':
+      return hitComment(obj, wx, wy, pad);
     case 'text': {
       var b = getBounds(obj);
       return b && wx >= b.x - pad && wx <= b.x + b.w + pad &&
@@ -167,6 +172,7 @@ export function hitBorder(obj, wx, wy) {
     case 'rect':
     case 'sticky':
     case 'image':
+    case 'comment':
     case 'text': {
       var b = obj.type === 'rect' ? { x: obj.x, y: obj.y, w: obj.w, h: obj.h } : getBounds(obj);
       return b ? hitBoundsBorder(b, wx, wy, pad) : false;
