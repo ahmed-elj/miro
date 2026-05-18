@@ -16,7 +16,7 @@ import {
   ROTATE_HANDLE_RADIUS,
 } from "./constants.js";
 import { s2w, w2s, showToast, getArrowHeadMode } from "./utils.js";
-import { requestRender } from "./canvas.js";
+import { requestRender, drawObject } from "./canvas.js";
 import { getBounds, getRotatedBounds, hitTest, hitBorder } from "./objects.js";
 import { getSpans, listifyPlainText, listifySpans } from "./editor.js";
 import {
@@ -81,6 +81,9 @@ var VIEW_BOOKMARK_THUMB_W = 160;
 var VIEW_BOOKMARK_THUMB_H = 96;
 var BOARD_INDEX_KEY = STORAGE_KEY + "-boards";
 var DEFAULT_BOARD_ID = "default";
+var EMPTY_BOARD_THUMBNAIL = "";
+var highlightedBookmarkId = null;
+var bookmarkAutoCloseTimer = null;
 
 function codeToLabel(code) {
   if (!code) return "None";
@@ -1786,9 +1789,117 @@ function captureViewThumbnail() {
   return thumb.toDataURL("image/png");
 }
 
+function drawThumbnailGrid(tctx, viewportW, viewportH) {
+  if (state.settings.bgPattern === "none") return;
+  var ws = 36 / cam.zoom;
+  var mag = Math.pow(10, Math.floor(Math.log10(ws)));
+  var n = ws / mag;
+  var gs = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+  var tl = s2w(0, 0);
+  var br = s2w(viewportW, viewportH);
+  var sx = Math.floor(tl.x / gs) * gs;
+  var sy = Math.floor(tl.y / gs) * gs;
+  tctx.fillStyle = state.settings.gridColor;
+  tctx.strokeStyle = state.settings.gridColor;
+  if (state.settings.bgPattern === "grid") {
+    tctx.lineWidth = 1 / cam.zoom;
+    tctx.beginPath();
+    for (var gx = sx; gx <= br.x; gx += gs) {
+      tctx.moveTo(gx, tl.y);
+      tctx.lineTo(gx, br.y);
+    }
+    for (var gy = sy; gy <= br.y; gy += gs) {
+      tctx.moveTo(tl.x, gy);
+      tctx.lineTo(br.x, gy);
+    }
+    tctx.stroke();
+    return;
+  }
+  var dr = 1 / cam.zoom;
+  for (var x = sx; x <= br.x; x += gs) {
+    for (var y = sy; y <= br.y; y += gs) {
+      tctx.beginPath();
+      tctx.arc(x, y, dr, 0, Math.PI * 2);
+      tctx.fill();
+    }
+  }
+}
+
+function captureCameraThumbnail(viewCam) {
+  var oldCam = { x: cam.x, y: cam.y, zoom: cam.zoom };
+  var viewportW = window.innerWidth;
+  var viewportH = window.innerHeight;
+  var thumb = document.createElement("canvas");
+  var tctx = thumb.getContext("2d");
+  thumb.width = VIEW_BOOKMARK_THUMB_W;
+  thumb.height = VIEW_BOOKMARK_THUMB_H;
+  try {
+    cam.x = viewCam.x;
+    cam.y = viewCam.y;
+    cam.zoom = viewCam.zoom;
+    tctx.save();
+    tctx.scale(VIEW_BOOKMARK_THUMB_W / viewportW, VIEW_BOOKMARK_THUMB_H / viewportH);
+    tctx.fillStyle = state.settings.canvasColor;
+    tctx.fillRect(0, 0, viewportW, viewportH);
+    tctx.translate(cam.x, cam.y);
+    tctx.scale(cam.zoom, cam.zoom);
+    drawThumbnailGrid(tctx, viewportW, viewportH);
+    objects.forEach(function (obj) {
+      drawObject(tctx, obj);
+    });
+    tctx.restore();
+  } finally {
+    cam.x = oldCam.x;
+    cam.y = oldCam.y;
+    cam.zoom = oldCam.zoom;
+  }
+  try {
+    var jpeg = thumb.toDataURL("image/jpeg", 0.78);
+    if (jpeg.indexOf("data:image/jpeg") === 0) return jpeg;
+  } catch (e) {}
+  return thumb.toDataURL("image/png");
+}
+
+function persistCurrentBoardSnapshot() {
+  try {
+    var raw = JSON.stringify(serializeCurrentBoard());
+    localStorage.setItem(STORAGE_KEY, raw);
+    localStorage.setItem(boardStorageKey(state.currentBoardId || DEFAULT_BOARD_ID), raw);
+  } catch (e) {}
+}
+
+function updateViewBookmarkThumbnails() {
+  if (!state.viewBookmarks.length) return;
+  state.viewBookmarks.forEach(function (bookmark) {
+    if (bookmark.cam) bookmark.thumbnail = captureCameraThumbnail(bookmark.cam);
+  });
+  persistCurrentBoardSnapshot();
+}
+
+function getEmptyBoardThumbnail() {
+  if (EMPTY_BOARD_THUMBNAIL) return EMPTY_BOARD_THUMBNAIL;
+  var thumb = document.createElement("canvas");
+  var tctx = thumb.getContext("2d");
+  thumb.width = VIEW_BOOKMARK_THUMB_W;
+  thumb.height = VIEW_BOOKMARK_THUMB_H;
+  tctx.fillStyle = state.settings.canvasColor || DEFAULT_SETTINGS.canvasColor;
+  tctx.fillRect(0, 0, thumb.width, thumb.height);
+  tctx.fillStyle = state.settings.gridColor || DEFAULT_SETTINGS.gridColor;
+  for (var x = 12; x < thumb.width; x += 18) {
+    for (var y = 12; y < thumb.height; y += 18) {
+      tctx.beginPath();
+      tctx.arc(x, y, 1.2, 0, Math.PI * 2);
+      tctx.fill();
+    }
+  }
+  EMPTY_BOARD_THUMBNAIL = thumb.toDataURL("image/png");
+  return EMPTY_BOARD_THUMBNAIL;
+}
+
 function saveCurrentViewBookmark() {
   if (state.isEditing) finishEditing();
   closeViewBookmarksPanel();
+  if (bookmarkAutoCloseTimer) clearTimeout(bookmarkAutoCloseTimer);
   requestRender();
   requestAnimationFrame(function () {
     var bookmark = {
@@ -1801,7 +1912,20 @@ function saveCurrentViewBookmark() {
     state.viewBookmarks.push(bookmark);
     state.viewBookmarks.sort(function (a, b) { return a.createdAt - b.createdAt; });
     while (state.viewBookmarks.length > MAX_VIEW_BOOKMARKS) state.viewBookmarks.shift();
+    highlightedBookmarkId = bookmark.id;
     renderViewBookmarks();
+    var panel = document.getElementById("viewBookmarksPanel");
+    var btn = document.getElementById("viewBookmarksBtn");
+    if (panel) panel.classList.add("open");
+    if (btn) btn.classList.add("active");
+    var row = document.querySelector('.view-bookmark-row[data-id="' + bookmark.id + '"]');
+    if (row) row.scrollIntoView({ block: "nearest" });
+    bookmarkAutoCloseTimer = setTimeout(function () {
+      highlightedBookmarkId = null;
+      closeViewBookmarksPanel();
+      renderViewBookmarks();
+      bookmarkAutoCloseTimer = null;
+    }, 2000);
     saveToStorage();
     showToast("View saved");
   });
@@ -1822,6 +1946,7 @@ function renderViewBookmarks() {
     var row = document.createElement("button");
     row.type = "button";
     row.className = "view-bookmark-row";
+    if (bookmark.id === highlightedBookmarkId) row.classList.add("highlight");
     row.dataset.id = bookmark.id;
     row.addEventListener("click", function () {
       restoreViewBookmark(bookmark.id);
@@ -1848,6 +1973,15 @@ function renderViewBookmarks() {
     del.className = "view-bookmark-delete";
     del.title = "Delete saved view";
     del.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+    var edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "view-bookmark-edit";
+    edit.title = "Rename saved view";
+    edit.innerHTML = '<i class="fa-solid fa-pen"></i>';
+    edit.addEventListener("click", function (e) {
+      e.stopPropagation();
+      renameViewBookmark(bookmark.id);
+    });
     del.addEventListener("click", function (e) {
       e.stopPropagation();
       deleteViewBookmark(bookmark.id);
@@ -1855,19 +1989,29 @@ function renderViewBookmarks() {
 
     row.appendChild(img);
     row.appendChild(meta);
-    row.appendChild(del);
+    var actions = document.createElement("div");
+    actions.className = "view-bookmark-actions";
+    actions.appendChild(edit);
+    actions.appendChild(del);
+    row.appendChild(actions);
     list.appendChild(row);
   });
 }
 
 function toggleViewBookmarksPanel(e) {
   if (e) e.stopPropagation();
+  if (bookmarkAutoCloseTimer) {
+    clearTimeout(bookmarkAutoCloseTimer);
+    bookmarkAutoCloseTimer = null;
+    highlightedBookmarkId = null;
+  }
   var panel = document.getElementById("viewBookmarksPanel");
   var btn = document.getElementById("viewBookmarksBtn");
   if (!panel) return;
   var open = panel.classList.contains("open");
   if (open) closeViewBookmarksPanel();
   else {
+    updateViewBookmarkThumbnails();
     renderViewBookmarks();
     panel.classList.add("open");
     if (btn) btn.classList.add("active");
@@ -1899,6 +2043,17 @@ function deleteViewBookmark(id) {
   });
   renderViewBookmarks();
   saveToStorage();
+}
+
+function renameViewBookmark(id) {
+  var bookmark = state.viewBookmarks.find(function (item) { return item.id === id; });
+  if (!bookmark) return;
+  openNameDialog("Rename saved view", bookmark.name, function (name) {
+    bookmark.name = name;
+    renderViewBookmarks();
+    saveToStorage();
+    showToast("View renamed");
+  }, "Untitled View");
 }
 
 function updateKeybindList() {
@@ -1951,6 +2106,11 @@ function normalizeBoardName(name) {
   return trimmed || "Untitled Board";
 }
 
+function normalizeName(name, fallback) {
+  var trimmed = (name || "").trim();
+  return trimmed || fallback;
+}
+
 function loadBoardIndex() {
   try {
     var raw = localStorage.getItem(BOARD_INDEX_KEY);
@@ -1964,6 +2124,7 @@ function loadBoardIndex() {
             id: board.id,
             name: board.name,
             updatedAt: Number.isFinite(board.updatedAt) ? board.updatedAt : Date.now(),
+            thumbnail: typeof board.thumbnail === "string" && board.thumbnail.indexOf("data:image/") === 0 ? board.thumbnail : "",
           };
         });
         if (boards.length) {
@@ -1977,7 +2138,7 @@ function loadBoardIndex() {
   } catch (e) {}
   return {
     activeId: DEFAULT_BOARD_ID,
-    boards: [{ id: DEFAULT_BOARD_ID, name: "Board 1", updatedAt: Date.now() }],
+    boards: [{ id: DEFAULT_BOARD_ID, name: "Board 1", updatedAt: Date.now(), thumbnail: "" }],
   };
 }
 
@@ -1987,41 +2148,108 @@ function saveBoardIndex(index) {
   } catch (e) {}
 }
 
-function upsertBoardMeta(id, name) {
+function upsertBoardMeta(id, name, thumbnail) {
   var index = loadBoardIndex();
   var found = false;
   index.boards.forEach(function (board) {
     if (board.id === id) {
       board.name = name || board.name;
       board.updatedAt = Date.now();
+      if (thumbnail) board.thumbnail = thumbnail;
       found = true;
     }
   });
   if (!found) {
-    index.boards.push({ id: id, name: name || "Untitled Board", updatedAt: Date.now() });
+    index.boards.push({ id: id, name: name || "Untitled Board", updatedAt: Date.now(), thumbnail: thumbnail || "" });
   }
   index.activeId = id;
   saveBoardIndex(index);
   renderBoardList();
 }
 
+function formatBoardUpdated(ts) {
+  if (!Number.isFinite(ts)) return "Not saved yet";
+  var diff = Date.now() - ts;
+  if (diff < 60000) return "Updated just now";
+  if (diff < 3600000) return "Updated " + Math.floor(diff / 60000) + "m ago";
+  if (diff < 86400000) return "Updated " + Math.floor(diff / 3600000) + "h ago";
+  return "Updated " + new Date(ts).toLocaleDateString();
+}
+
+function getBoardThumbnail(board) {
+  if (board.thumbnail) return board.thumbnail;
+  try {
+    var raw = localStorage.getItem(boardStorageKey(board.id));
+    if (!raw && board.id === DEFAULT_BOARD_ID) raw = localStorage.getItem(STORAGE_KEY);
+    var data = raw ? JSON.parse(raw) : null;
+    var views = data && Array.isArray(data.viewBookmarks) ? data.viewBookmarks : [];
+    for (var i = views.length - 1; i >= 0; i--) {
+      if (typeof views[i].thumbnail === "string" && views[i].thumbnail.indexOf("data:image/") === 0) {
+        return views[i].thumbnail;
+      }
+    }
+  } catch (e) {}
+  return getEmptyBoardThumbnail();
+}
+
+function updateActiveBoardThumbnail() {
+  try {
+    var index = loadBoardIndex();
+    var activeId = state.currentBoardId || index.activeId || DEFAULT_BOARD_ID;
+    var thumbnail = captureViewThumbnail();
+    var found = false;
+    index.boards.forEach(function (board) {
+      if (board.id === activeId) {
+        board.thumbnail = thumbnail;
+        found = true;
+      }
+    });
+    if (!found) index.boards.push({ id: activeId, name: "Board 1", updatedAt: Date.now(), thumbnail: thumbnail });
+    index.activeId = activeId;
+    saveBoardIndex(index);
+  } catch (e) {}
+}
+
 function renderBoardList() {
-  var select = document.getElementById("boardSelect");
+  var list = document.getElementById("boardList");
   var label = document.getElementById("boardMenuName");
   var index = loadBoardIndex();
   var activeId = state.currentBoardId || index.activeId;
   var sortedBoards = index.boards.slice().sort(function (a, b) {
     return b.updatedAt - a.updatedAt;
   });
-  if (select) {
-    select.innerHTML = "";
+  if (list) {
+    list.innerHTML = "";
     sortedBoards.forEach(function (board) {
-      var opt = document.createElement("option");
-      opt.value = board.id;
-      opt.textContent = board.name;
-      select.appendChild(opt);
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "board-row" + (board.id === activeId ? " active" : "");
+      row.dataset.id = board.id;
+      row.title = board.name;
+      row.addEventListener("click", function () {
+        if (board.id !== (state.currentBoardId || activeId)) loadBoardById(board.id);
+        closeBoardMenu();
+      });
+
+      var img = document.createElement("img");
+      img.className = "board-thumb";
+      img.src = getBoardThumbnail(board);
+      img.alt = "";
+
+      var meta = document.createElement("div");
+      meta.className = "board-row-meta";
+      var name = document.createElement("div");
+      name.className = "board-row-name";
+      name.textContent = board.name;
+      var sub = document.createElement("div");
+      sub.className = "board-row-sub";
+      sub.textContent = formatBoardUpdated(board.updatedAt);
+      meta.appendChild(name);
+      meta.appendChild(sub);
+      row.appendChild(img);
+      row.appendChild(meta);
+      list.appendChild(row);
     });
-    select.value = activeId;
   }
   if (label) {
     var activeBoard = index.boards.find(function (board) { return board.id === activeId; });
@@ -2085,33 +2313,29 @@ function loadBoardById(id) {
 function createNewBoard() {
   if (state.isEditing) finishEditing();
   saveToStorage();
-  var name = normalizeBoardName(window.prompt("Board name", "Untitled Board"));
-  var id = nextBoardId();
-  state.currentBoardId = id;
-  objects.length = 0;
-  state.nid = 1;
-  state.viewBookmarks = [];
-  state.undoSt = [];
-  state.redoSt = [];
-  state.selectedId = null;
-  state.selectedIds = [];
-  state.groupEditId = null;
-  state.groupEditCandidateId = null;
-  cam.x = window.innerWidth / 2;
-  cam.y = window.innerHeight / 2;
-  cam.zoom = 1;
-  mergeSettings(cloneSettings(state.settings));
-  updateZoomDisplay();
-  renderViewBookmarks();
-  requestRender();
-  upsertBoardMeta(id, name);
-  saveToStorage();
-  showToast("New board created");
-}
-
-function loadSelectedBoard() {
-  var select = document.getElementById("boardSelect");
-  if (select && select.value) loadBoardById(select.value);
+  openNameDialog("New board", "Untitled Board", function (name) {
+    var id = nextBoardId();
+    state.currentBoardId = id;
+    objects.length = 0;
+    state.nid = 1;
+    state.viewBookmarks = [];
+    state.undoSt = [];
+    state.redoSt = [];
+    state.selectedId = null;
+    state.selectedIds = [];
+    state.groupEditId = null;
+    state.groupEditCandidateId = null;
+    cam.x = window.innerWidth / 2;
+    cam.y = window.innerHeight / 2;
+    cam.zoom = 1;
+    mergeSettings(cloneSettings(state.settings));
+    updateZoomDisplay();
+    renderViewBookmarks();
+    requestRender();
+    upsertBoardMeta(id, name);
+    saveToStorage();
+    showToast("New board created");
+  }, "Untitled Board");
 }
 
 function exportCurrentBoard() {
@@ -2131,6 +2355,26 @@ function exportCurrentBoard() {
   link.click();
   setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
   showToast("Board exported");
+}
+
+function renameCurrentBoard() {
+  var id = state.currentBoardId || DEFAULT_BOARD_ID;
+  var index = loadBoardIndex();
+  var meta = index.boards.find(function (board) { return board.id === id; });
+  var currentName = meta ? meta.name : "Board 1";
+  openNameDialog("Rename board", currentName, function (name) {
+    index.boards.forEach(function (board) {
+      if (board.id === id) {
+        board.name = name;
+        board.updatedAt = Date.now();
+      }
+    });
+    index.activeId = id;
+    saveBoardIndex(index);
+    renderBoardList();
+    saveToStorage();
+    showToast("Board renamed");
+  }, "Untitled Board");
 }
 
 function importBoardFile(file) {
@@ -2159,6 +2403,57 @@ function importBoardFile(file) {
 function closeBoardMenu() {
   var menu = document.getElementById("boardMenu");
   if (menu) menu.classList.remove("open");
+}
+
+var pendingNameDialogSubmit = null;
+var pendingNameDialogFallback = "Untitled";
+
+function openNameDialog(title, initialValue, onSubmit, fallbackName) {
+  closeBoardMenu();
+  closeViewBookmarksPanel();
+  var backdrop = document.getElementById("nameDialogBackdrop");
+  var titleEl = document.getElementById("nameDialogTitle");
+  var input = document.getElementById("nameDialogInput");
+  pendingNameDialogSubmit = onSubmit;
+  pendingNameDialogFallback = fallbackName || initialValue || "Untitled";
+  titleEl.textContent = title;
+  input.value = initialValue || "";
+  backdrop.classList.add("open");
+  backdrop.setAttribute("aria-hidden", "false");
+  setTimeout(function () {
+    input.focus();
+    input.select();
+  }, 0);
+}
+
+function closeNameDialog() {
+  var backdrop = document.getElementById("nameDialogBackdrop");
+  if (!backdrop) return;
+  backdrop.classList.remove("open");
+  backdrop.setAttribute("aria-hidden", "true");
+  pendingNameDialogSubmit = null;
+  pendingNameDialogFallback = "Untitled";
+}
+
+function setupNameDialog() {
+  var backdrop = document.getElementById("nameDialogBackdrop");
+  var dialog = document.getElementById("nameDialog");
+  var input = document.getElementById("nameDialogInput");
+  document.getElementById("nameDialogClose").addEventListener("click", closeNameDialog);
+  document.getElementById("nameDialogCancel").addEventListener("click", closeNameDialog);
+  dialog.addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+  });
+  backdrop.addEventListener("pointerdown", function (e) {
+    if (e.target === backdrop) closeNameDialog();
+  });
+  dialog.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var submit = pendingNameDialogSubmit;
+    var name = normalizeName(input.value, pendingNameDialogFallback);
+    closeNameDialog();
+    if (submit) submit(name);
+  });
 }
 
 function setToolShortcut(tool, code) {
@@ -2279,7 +2574,11 @@ function setupOptions() {
   });
   document.getElementById("boardMenuBtn").addEventListener("click", function (e) {
     e.stopPropagation();
-    document.getElementById("boardMenu").classList.toggle("open");
+    var menu = document.getElementById("boardMenu");
+    var willOpen = !menu.classList.contains("open");
+    if (willOpen) updateActiveBoardThumbnail();
+    renderBoardList();
+    menu.classList.toggle("open");
   });
   document.getElementById("boardMenu").addEventListener("pointerdown", function (e) {
     e.stopPropagation();
@@ -2290,9 +2589,8 @@ function setupOptions() {
     createNewBoard();
     closeBoardMenu();
   });
-  document.getElementById("loadBoardBtn").addEventListener("click", function () {
-    loadSelectedBoard();
-    closeBoardMenu();
+  document.getElementById("renameBoardBtn").addEventListener("click", function () {
+    renameCurrentBoard();
   });
   document.getElementById("exportBoardBtn").addEventListener("click", exportCurrentBoard);
   document.getElementById("importBoardBtn").addEventListener("click", function () {
@@ -2636,6 +2934,13 @@ function selectAll() {
 function setupKeyboard() {
   var s = state;
   window.addEventListener("keydown", function (e) {
+    if (document.getElementById("nameDialogBackdrop").classList.contains("open")) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeNameDialog();
+      }
+      return;
+    }
     if (e.key === "Escape" && document.getElementById("viewBookmarksPanel").classList.contains("open")) {
       e.preventDefault();
       closeViewBookmarksPanel();
@@ -2751,7 +3056,7 @@ export function saveToStorage() {
       }
     });
     if (!found) {
-      index.boards.push({ id: index.activeId, name: "Board 1", updatedAt: Date.now() });
+      index.boards.push({ id: index.activeId, name: "Board 1", updatedAt: Date.now(), thumbnail: "" });
     }
     saveBoardIndex(index);
     renderBoardList();
@@ -2856,6 +3161,7 @@ export function initUI() {
   setupContextMenu();
   setupPointerEvents();
   setupKeyboard();
+  setupNameDialog();
   applySettingsToUI();
   updateCursor();
   updateZoomDisplay();

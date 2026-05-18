@@ -92,7 +92,7 @@ canvas#board {
   position: absolute;
   top: 46px;
   left: 0;
-  width: 280px;
+  width: 320px;
   display: none;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -104,6 +104,71 @@ canvas#board {
 #boardMenu.open #boardMenuPanel {
   display: grid;
   gap: 9px;
+}
+
+.board-menu-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+#boardList {
+  display: grid;
+  gap: 7px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.board-row {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-family);
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 7px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-normal), background var(--transition-normal);
+}
+
+.board-row:hover,
+.board-row.active {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.board-thumb {
+  width: 74px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  object-fit: cover;
+}
+
+.board-row-meta {
+  min-width: 0;
+}
+
+.board-row-name {
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .board-menu-field {
@@ -605,7 +670,7 @@ canvas#board {
   width: 100%;
   min-height: 70px;
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) 30px;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   padding: 6px;
@@ -622,6 +687,21 @@ canvas#board {
 .view-bookmark-row:hover {
   background: var(--border);
   border-color: var(--border);
+}
+
+.view-bookmark-row.highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+  animation: bookmark-highlight-pulse 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes bookmark-highlight-pulse {
+  from {
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 0 var(--accent-dim);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px var(--accent), 0 0 12px var(--accent-dim);
+  }
 }
 
 .view-bookmark-thumb {
@@ -655,6 +735,13 @@ canvas#board {
   font-weight: 600;
 }
 
+.view-bookmark-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.view-bookmark-edit,
 .view-bookmark-delete {
   width: 28px;
   height: 28px;
@@ -669,10 +756,120 @@ canvas#board {
   transition: all var(--transition-fast);
 }
 
+.view-bookmark-edit:hover {
+  background: var(--border);
+  color: var(--fg);
+  border-color: var(--border);
+}
+
 .view-bookmark-delete:hover {
   background: rgba(239, 68, 68, 0.15);
   color: var(--danger);
   border-color: var(--danger);
+}
+
+/* === Name Dialog === */
+#nameDialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#nameDialogBackdrop.open {
+  display: flex;
+}
+
+#nameDialog {
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-popup);
+  padding: 14px;
+}
+
+.name-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.name-dialog-head h2 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+#nameDialogClose,
+.name-dialog-actions button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+#nameDialogClose {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+}
+
+.name-dialog-field {
+  display: grid;
+  gap: 7px;
+}
+
+.name-dialog-field span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+#nameDialogInput {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family);
+  font-size: 14px;
+  padding: 0 10px;
+  outline: none;
+}
+
+#nameDialogInput:focus {
+  border-color: var(--accent);
+}
+
+.name-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.name-dialog-actions button {
+  height: 34px;
+  border-radius: var(--radius-sm);
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#nameDialogSubmit {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07140f;
 }
 
 @media (max-width: 520px) {

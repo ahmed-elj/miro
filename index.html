@@ -20,13 +20,11 @@
       <i class="fa-solid fa-chevron-down board-menu-chevron"></i>
     </button>
     <div id="boardMenuPanel">
-      <label class="board-menu-field">
-        <span>Current Board</span>
-        <select id="boardSelect"></select>
-      </label>
+      <div class="board-menu-title">Boards</div>
+      <div id="boardList"></div>
       <div class="board-actions">
         <button class="board-btn" id="newBoardBtn" type="button"><i class="fa-solid fa-plus"></i><span>New</span></button>
-        <button class="board-btn" id="loadBoardBtn" type="button"><i class="fa-solid fa-folder-open"></i><span>Load</span></button>
+        <button class="board-btn" id="renameBoardBtn" type="button"><i class="fa-solid fa-pen"></i><span>Rename</span></button>
         <button class="board-btn" id="exportBoardBtn" type="button"><i class="fa-solid fa-file-export"></i><span>Export</span></button>
       </div>
       <button class="board-btn board-btn-wide" id="importBoardBtn" type="button"><i class="fa-solid fa-file-import"></i><span>Load from file</span></button>
@@ -216,6 +214,23 @@
     </div>
     <div id="viewBookmarksList"></div>
   </section>
+
+  <div id="nameDialogBackdrop" aria-hidden="true">
+    <form id="nameDialog" role="dialog" aria-modal="true" aria-labelledby="nameDialogTitle">
+      <div class="name-dialog-head">
+        <h2 id="nameDialogTitle">Rename</h2>
+        <button type="button" id="nameDialogClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <label class="name-dialog-field">
+        <span>Name</span>
+        <input id="nameDialogInput" type="text" autocomplete="off">
+      </label>
+      <div class="name-dialog-actions">
+        <button type="button" id="nameDialogCancel">Cancel</button>
+        <button type="submit" id="nameDialogSubmit">Save</button>
+      </div>
+    </form>
+  </div>
 
   <div id="textEditor" contenteditable="true" spellcheck="false"></div>
   <textarea id="stickyEditor" spellcheck="false"></textarea>
