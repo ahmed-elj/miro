@@ -129,7 +129,7 @@ canvas#board {
   color: var(--fg);
   font-family: var(--font-family);
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr) 30px;
   gap: 10px;
   align-items: center;
   padding: 7px;
@@ -169,6 +169,26 @@ canvas#board {
   margin-top: 3px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.board-delete {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.board-delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .board-menu-field {
@@ -769,7 +789,8 @@ canvas#board {
 }
 
 /* === Name Dialog === */
-#nameDialogBackdrop {
+#nameDialogBackdrop,
+#confirmDialogBackdrop {
   position: fixed;
   inset: 0;
   z-index: 90;
@@ -779,11 +800,13 @@ canvas#board {
   background: rgba(0, 0, 0, 0.45);
 }
 
-#nameDialogBackdrop.open {
+#nameDialogBackdrop.open,
+#confirmDialogBackdrop.open {
   display: flex;
 }
 
-#nameDialog {
+#nameDialog,
+#confirmDialog {
   width: min(360px, calc(100vw - 32px));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -870,6 +893,19 @@ canvas#board {
   background: var(--accent);
   border-color: var(--accent);
   color: #07140f;
+}
+
+#confirmDialogMessage {
+  margin: 0;
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#confirmDialogSubmit {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }
 
 @media (max-width: 520px) {

@@ -232,6 +232,20 @@
     </form>
   </div>
 
+  <div id="confirmDialogBackdrop" aria-hidden="true">
+    <form id="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="confirmDialogTitle">
+      <div class="name-dialog-head">
+        <h2 id="confirmDialogTitle">Confirm</h2>
+        <button type="button" id="confirmDialogClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p id="confirmDialogMessage"></p>
+      <div class="name-dialog-actions">
+        <button type="button" id="confirmDialogCancel">Cancel</button>
+        <button type="submit" id="confirmDialogSubmit">Delete</button>
+      </div>
+    </form>
+  </div>
+
   <div id="textEditor" contenteditable="true" spellcheck="false"></div>
   <textarea id="stickyEditor" spellcheck="false"></textarea>
   <div id="toasts"></div>

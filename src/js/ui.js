@@ -2221,14 +2221,21 @@ function renderBoardList() {
   if (list) {
     list.innerHTML = "";
     sortedBoards.forEach(function (board) {
-      var row = document.createElement("button");
-      row.type = "button";
+      var row = document.createElement("div");
       row.className = "board-row" + (board.id === activeId ? " active" : "");
       row.dataset.id = board.id;
       row.title = board.name;
-      row.addEventListener("click", function () {
+      row.tabIndex = 0;
+      function openBoard() {
         if (board.id !== (state.currentBoardId || activeId)) loadBoardById(board.id);
         closeBoardMenu();
+      }
+      row.addEventListener("click", openBoard);
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openBoard();
+        }
       });
 
       var img = document.createElement("img");
@@ -2248,6 +2255,16 @@ function renderBoardList() {
       meta.appendChild(sub);
       row.appendChild(img);
       row.appendChild(meta);
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "board-delete";
+      del.title = "Delete board";
+      del.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+      del.addEventListener("click", function (e) {
+        e.stopPropagation();
+        requestDeleteBoard(board.id);
+      });
+      row.appendChild(del);
       list.appendChild(row);
     });
   }
@@ -2284,9 +2301,9 @@ function applyBoardData(data, fallbackSettings) {
   return true;
 }
 
-function loadBoardById(id) {
+function loadBoardById(id, skipSaveCurrent) {
   if (state.isEditing) finishEditing();
-  saveToStorage();
+  if (!skipSaveCurrent) saveToStorage();
   var raw = localStorage.getItem(boardStorageKey(id));
   if (!raw && id === DEFAULT_BOARD_ID) raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -2377,6 +2394,80 @@ function renameCurrentBoard() {
   }, "Untitled Board");
 }
 
+function requestDeleteBoard(id) {
+  var index = loadBoardIndex();
+  var board = index.boards.find(function (item) { return item.id === id; });
+  if (!board) return;
+  openConfirmDialog(
+    "Delete board",
+    'Delete "' + board.name + '"? This cannot be undone.',
+    "Delete",
+    function () {
+      deleteBoard(id);
+    },
+  );
+}
+
+function createEmptyDefaultBoard() {
+  state.currentBoardId = DEFAULT_BOARD_ID;
+  objects.length = 0;
+  state.nid = 1;
+  state.viewBookmarks = [];
+  state.undoSt = [];
+  state.redoSt = [];
+  state.selectedId = null;
+  state.selectedIds = [];
+  state.groupEditId = null;
+  state.groupEditCandidateId = null;
+  cam.x = window.innerWidth / 2;
+  cam.y = window.innerHeight / 2;
+  cam.zoom = 1;
+  mergeSettings(cloneSettings(state.settings));
+  updateZoomDisplay();
+  renderViewBookmarks();
+  requestRender();
+  var data = JSON.stringify(serializeCurrentBoard());
+  try {
+    localStorage.setItem(STORAGE_KEY, data);
+    localStorage.setItem(boardStorageKey(DEFAULT_BOARD_ID), data);
+  } catch (e) {}
+  saveBoardIndex({
+    activeId: DEFAULT_BOARD_ID,
+    boards: [{ id: DEFAULT_BOARD_ID, name: "Board 1", updatedAt: Date.now(), thumbnail: "" }],
+  });
+}
+
+function deleteBoard(id) {
+  if (state.isEditing) finishEditing();
+  var index = loadBoardIndex();
+  var activeId = state.currentBoardId || index.activeId || DEFAULT_BOARD_ID;
+  var board = index.boards.find(function (item) { return item.id === id; });
+  if (!board) return;
+  try {
+    localStorage.removeItem(boardStorageKey(id));
+    if (id === DEFAULT_BOARD_ID) localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {}
+  index.boards = index.boards.filter(function (item) { return item.id !== id; });
+  if (!index.boards.length) {
+    createEmptyDefaultBoard();
+    renderBoardList();
+    saveToStorage();
+    showToast("Board deleted");
+    return;
+  }
+  var nextId = activeId === id ? index.boards.slice().sort(function (a, b) {
+    return b.updatedAt - a.updatedAt;
+  })[0].id : activeId;
+  index.activeId = nextId;
+  saveBoardIndex(index);
+  if (activeId === id) {
+    loadBoardById(nextId, true);
+  } else {
+    renderBoardList();
+  }
+  showToast("Board deleted");
+}
+
 function importBoardFile(file) {
   if (!file) return;
   var reader = new FileReader();
@@ -2407,6 +2498,7 @@ function closeBoardMenu() {
 
 var pendingNameDialogSubmit = null;
 var pendingNameDialogFallback = "Untitled";
+var pendingConfirmDialogSubmit = null;
 
 function openNameDialog(title, initialValue, onSubmit, fallbackName) {
   closeBoardMenu();
@@ -2453,6 +2545,44 @@ function setupNameDialog() {
     var name = normalizeName(input.value, pendingNameDialogFallback);
     closeNameDialog();
     if (submit) submit(name);
+  });
+}
+
+function openConfirmDialog(title, message, submitLabel, onSubmit) {
+  closeBoardMenu();
+  var backdrop = document.getElementById("confirmDialogBackdrop");
+  document.getElementById("confirmDialogTitle").textContent = title;
+  document.getElementById("confirmDialogMessage").textContent = message;
+  document.getElementById("confirmDialogSubmit").textContent = submitLabel || "Confirm";
+  pendingConfirmDialogSubmit = onSubmit;
+  backdrop.classList.add("open");
+  backdrop.setAttribute("aria-hidden", "false");
+}
+
+function closeConfirmDialog() {
+  var backdrop = document.getElementById("confirmDialogBackdrop");
+  if (!backdrop) return;
+  backdrop.classList.remove("open");
+  backdrop.setAttribute("aria-hidden", "true");
+  pendingConfirmDialogSubmit = null;
+}
+
+function setupConfirmDialog() {
+  var backdrop = document.getElementById("confirmDialogBackdrop");
+  var dialog = document.getElementById("confirmDialog");
+  document.getElementById("confirmDialogClose").addEventListener("click", closeConfirmDialog);
+  document.getElementById("confirmDialogCancel").addEventListener("click", closeConfirmDialog);
+  dialog.addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+  });
+  backdrop.addEventListener("pointerdown", function (e) {
+    if (e.target === backdrop) closeConfirmDialog();
+  });
+  dialog.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var submit = pendingConfirmDialogSubmit;
+    closeConfirmDialog();
+    if (submit) submit();
   });
 }
 
@@ -2941,6 +3071,13 @@ function setupKeyboard() {
       }
       return;
     }
+    if (document.getElementById("confirmDialogBackdrop").classList.contains("open")) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeConfirmDialog();
+      }
+      return;
+    }
     if (e.key === "Escape" && document.getElementById("viewBookmarksPanel").classList.contains("open")) {
       e.preventDefault();
       closeViewBookmarksPanel();
@@ -3162,6 +3299,7 @@ export function initUI() {
   setupPointerEvents();
   setupKeyboard();
   setupNameDialog();
+  setupConfirmDialog();
   applySettingsToUI();
   updateCursor();
   updateZoomDisplay();
