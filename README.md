@@ -51,6 +51,20 @@ Preview the production build:
 npm run preview
 ```
 
+## Deploying to GitHub Pages
+
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy.yml`.
+To publish it:
+
+1. Push the repo to GitHub on the `main` branch.
+2. Open the repository settings on GitHub.
+3. Go to **Pages**.
+4. Set **Build and deployment** → **Source** to **GitHub Actions**.
+
+On each push to `main`, GitHub will build the Vite app and deploy the `dist/`
+folder to GitHub Pages. The Vite base path is detected automatically from the
+repository name during the workflow.
+
 ## Project Structure
 
 ```text
