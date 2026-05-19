@@ -34,7 +34,7 @@ function render() {
   drawGrid(w, h);
   for (var i = 0; i < objects.length; i++) {
     if (s.isEditing && objects[i].id === s.editId) {
-      if (objects[i].type === 'sticky') drawStickyShell(ctx, objects[i]);
+      if (objects[i].type === 'sticky') drawStickyShellOnly(ctx, objects[i]);
       continue;
     }
     drawObject(ctx, objects[i]);
@@ -322,6 +322,22 @@ function drawText(c, o) {
 function drawSticky(c, o) {
   drawStickyShell(c, o);
   drawStickyText(c, o);
+}
+
+function drawStickyShellOnly(c, o) {
+  c.save();
+  var rot = o.rotation || 0;
+  if (rot) {
+    var b = getBounds(o);
+    if (b) {
+      var cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      c.translate(cx, cy);
+      c.rotate(rot);
+      c.translate(-cx, -cy);
+    }
+  }
+  drawStickyShell(c, o);
+  c.restore();
 }
 
 function drawStickyShell(c, o) {

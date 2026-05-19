@@ -1169,7 +1169,7 @@ export function startStickyCreate(wp) {
   var sp = w2s(wp.x, wp.y);
   ed.style.display = 'block';
   ed.style.left = sp.x + 'px'; ed.style.top = sp.y + 'px';
-  ed.style.transform = 'translate(-50%, -50%)';
+  ed.style.transform = getStickyEditorTransform(0);
   ed.style.transformOrigin = 'center center';
   ed.style.width = Math.max(80, 200) + 'px'; ed.style.height = Math.max(80, 200) + 'px';
   ed.style.backgroundColor = bg; ed.style.fontSize = Math.max(10, 16) + 'px'; ed.style.color = '#1a1a1f';
@@ -1218,7 +1218,7 @@ export function startEditExisting(obj, caretPoint) {
     var center = w2s(obj.x + obj.w / 2, obj.y + obj.h / 2);
     ed2.style.display = 'block';
     ed2.style.left = center.x + 'px'; ed2.style.top = center.y + 'px';
-    ed2.style.transform = 'translate(-50%, -50%)';
+    ed2.style.transform = getStickyEditorTransform(obj.rotation || 0);
     ed2.style.transformOrigin = 'center center';
     ed2.style.width = Math.max(80, obj.w * cam.zoom) + 'px';
     ed2.style.height = Math.max(80, obj.h * cam.zoom) + 'px';
@@ -1373,7 +1373,7 @@ export function updateEditorPosition() {
     var ssp = sobj ? w2s(sobj.x + sobj.w / 2, sobj.y + sobj.h / 2) : w2s(swx + (+se.dataset.w || 200 / cam.zoom) / 2, swy + (+se.dataset.h || 200 / cam.zoom) / 2);
     se.style.left = ssp.x + 'px';
     se.style.top = ssp.y + 'px';
-    se.style.transform = 'translate(-50%, -50%)';
+    se.style.transform = getStickyEditorTransform(sobj ? (sobj.rotation || 0) : 0);
     se.style.transformOrigin = 'center center';
     if (sobj && sobj.type === 'sticky') {
       se.style.width = Math.max(80, sobj.w * cam.zoom) + 'px';
@@ -1419,6 +1419,11 @@ export function syncStickyEditorCenter(ed) {
   var centeredPad = Math.max(basePad, (boxH - contentH) / 2);
   ed.style.paddingTop = centeredPad + 'px';
   ed.style.paddingBottom = centeredPad + 'px';
+}
+
+function getStickyEditorTransform(rotation) {
+  var rot = rotation || 0;
+  return 'translate(-50%, -50%)' + (Math.abs(rot) > 0.0001 ? ' rotate(' + rot + 'rad)' : '');
 }
 
 function resetStickyEditorCenter(ed) {
