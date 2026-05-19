@@ -4,7 +4,7 @@
 
 import { cam, objects, imgCache, state, gid } from './state.js';
 import { STICKY_COLORS, MIN_ZOOM, MAX_ZOOM, CURSOR_MAP, HANDLE_HIT, ROTATE_HANDLE_DIST } from './constants.js';
-import { s2w, w2s, showToast, getArrowBendHandle, ptSegDist } from './utils.js';
+import { s2w, w2s, showToast, getArrowBendHandle, ptSegDist, wrapLine } from './utils.js';
 import { requestRender, drawObject } from './canvas.js';
 import { getBounds, getRotatedBounds, hitTest, hitBorder, hitHandle, getGroupBounds, hitRotateHandle, hitRotateHandleBounds, inverseRotatePoint, hitArrowBendHandle, hitArrowEndpointHandle } from './objects.js';
 import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
@@ -232,7 +232,8 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
       s.dragUndo = false;
       return;
     }
-    if (obj && !obj.locked && obj.type !== 'arrow' && obj.type !== 'line' && hitRotateHandle(obj, wp.x, wp.y)) {
+    var commentHandlesActive = obj && obj.type === 'comment' && state.commentHandlesId === obj.id;
+    if (obj && !obj.locked && obj.type !== 'arrow' && obj.type !== 'line' && obj.type !== 'comment' && hitRotateHandle(obj, wp.x, wp.y)) {
       s.dragMode = 'rotate';
       s.dragSW = wp;
       s.dragUndo = false;
@@ -266,7 +267,7 @@ export function onSelectDown(wp, sx, sy, shiftKey) {
   } else if (s.selectedId !== null) {
     var obj = findObj(s.selectedId);
     if (obj && !obj.locked) {
-      var h = (obj.type === 'arrow' || obj.type === 'line') ? null : hitHandle(obj, wp.x, wp.y);
+      var h = (obj.type === 'arrow' || obj.type === 'line' || (obj.type === 'comment' && !commentHandlesActive)) ? null : hitHandle(obj, wp.x, wp.y);
       if (h) {
         s.dragMode = h;
         s.dragSW = wp;
@@ -1168,14 +1169,17 @@ export function startStickyCreate(wp) {
   var sp = w2s(wp.x, wp.y);
   ed.style.display = 'block';
   ed.style.left = sp.x + 'px'; ed.style.top = sp.y + 'px';
+  ed.style.transform = 'translate(-50%, -50%)';
+  ed.style.transformOrigin = 'center center';
   ed.style.width = Math.max(80, 200) + 'px'; ed.style.height = Math.max(80, 200) + 'px';
   ed.style.backgroundColor = bg; ed.style.fontSize = Math.max(10, 16) + 'px'; ed.style.color = '#1a1a1f';
   ed.style.textAlign = 'center';
   ed.value = '';
   s.isEditing = true; s.editId = 'new-sticky';
-  ed.dataset.wx = wp.x; ed.dataset.wy = wp.y; ed.dataset.bgColor = bg;
-  ed.dataset.w = ww; ed.dataset.h = wh; ed.dataset.wfs = 16 / cam.zoom;
-  setTimeout(function() { ed.focus(); }, 80);
+  ed.dataset.wx = wp.x - ww / 2; ed.dataset.wy = wp.y - wh / 2; ed.dataset.bgColor = bg;
+  ed.dataset.w = ww; ed.dataset.h = wh; ed.dataset.wfs = 16 / cam.zoom; ed.dataset.fontWeight = 400;
+  syncStickyEditorCenter(ed);
+  setTimeout(function() { ed.focus(); syncStickyEditorCenter(ed); }, 80);
 }
 
 export function startCommentCreate(wp) {
@@ -1211,17 +1215,24 @@ export function startEditExisting(obj, caretPoint) {
     }, 80);
   } else if (obj.type === 'sticky') {
     var ed2 = document.getElementById('stickyEditor');
+    var center = w2s(obj.x + obj.w / 2, obj.y + obj.h / 2);
     ed2.style.display = 'block';
-    ed2.style.left = sp.x + 'px'; ed2.style.top = sp.y + 'px';
+    ed2.style.left = center.x + 'px'; ed2.style.top = center.y + 'px';
+    ed2.style.transform = 'translate(-50%, -50%)';
+    ed2.style.transformOrigin = 'center center';
     ed2.style.width = Math.max(80, obj.w * cam.zoom) + 'px';
     ed2.style.height = Math.max(80, obj.h * cam.zoom) + 'px';
     ed2.style.backgroundColor = 'transparent';
     ed2.style.fontSize = Math.max(10, obj.fontSize * cam.zoom) + 'px';
     ed2.style.color = '#1a1a1f';
     ed2.style.textAlign = obj.textAlign || 'center';
+    ed2.style.fontWeight = obj.fontWeight || '400';
+    ed2.style.fontStyle = obj.fontStyle || 'normal';
+    ed2.style.textDecoration = obj.underline ? 'underline' : 'none';
     ed2.value = obj.text;
+    syncStickyEditorCenter(ed2);
     s.isEditing = true; s.editId = obj.id;
-    setTimeout(function() { ed2.focus(); ed2.select(); }, 80);
+    setTimeout(function() { ed2.focus(); ed2.select(); syncStickyEditorCenter(ed2); }, 80);
   }
   requestRender();
 }
@@ -1263,8 +1274,8 @@ export function finishEditing() {
 	    te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
   } else if (s.editId === 'new-sticky' && se.style.display === 'block') {
     var t = se.value.trim() || 'Note';
-    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, textAlign: 'center', opacity: 1, rotation: 0 });
-    se.style.display = 'none'; se.value = ''; se.style.textAlign = '';
+    addObj({ type: 'sticky', id: gid(), x: +se.dataset.wx, y: +se.dataset.wy, w: +se.dataset.w, h: +se.dataset.h, text: t, bgColor: se.dataset.bgColor, fontSize: +se.dataset.wfs, textAlign: 'center', fontWeight: +se.dataset.fontWeight || 400, opacity: 1, rotation: 0 });
+    se.style.display = 'none'; se.value = ''; se.style.textAlign = ''; se.style.fontWeight = ''; se.style.fontStyle = ''; se.style.textDecoration = ''; resetStickyEditorCenter(se);
   } else if (typeof s.editId === 'number') {
     var obj = findObj(s.editId);
     if (obj) {
@@ -1272,8 +1283,8 @@ export function finishEditing() {
 	        saveState(); obj.spans = parseHtmlSpans(te, obj.color || '#e4e4e8');
 	        te.style.display = 'none'; te.innerHTML = ''; te.style.transform = ''; te.style.transformOrigin = ''; te.style.minWidth = ''; te.style.width = ''; te.style.maxWidth = ''; te.style.minHeight = ''; te.style.height = ''; te.style.whiteSpace = ''; te.style.textAlign = '';
       } else if (obj.type === 'sticky' && se.style.display === 'block') {
-        saveState(); obj.text = se.value || 'Note'; obj.textAlign = obj.textAlign || 'center';
-        se.style.display = 'none'; se.value = ''; se.style.textAlign = '';
+        saveState(); obj.text = se.value || 'Note'; obj.textAlign = obj.textAlign || 'center'; obj.fontWeight = se.style.fontWeight || obj.fontWeight || 400; obj.fontStyle = se.style.fontStyle || obj.fontStyle || 'normal'; obj.underline = se.style.textDecoration.indexOf('underline') >= 0;
+        se.style.display = 'none'; se.value = ''; se.style.textAlign = ''; se.style.fontWeight = ''; se.style.fontStyle = ''; se.style.textDecoration = ''; resetStickyEditorCenter(se);
       }
     }
   }
@@ -1359,22 +1370,62 @@ export function updateEditorPosition() {
   if (se.style.display === 'block') {
     var swx = +se.dataset.wx, swy = +se.dataset.wy;
     var sobj = typeof s.editId === 'number' ? findObj(s.editId) : null;
-    if (sobj) { swx = sobj.x; swy = sobj.y; }
-    var ssp = w2s(swx, swy);
+    var ssp = sobj ? w2s(sobj.x + sobj.w / 2, sobj.y + sobj.h / 2) : w2s(swx + (+se.dataset.w || 200 / cam.zoom) / 2, swy + (+se.dataset.h || 200 / cam.zoom) / 2);
     se.style.left = ssp.x + 'px';
     se.style.top = ssp.y + 'px';
+    se.style.transform = 'translate(-50%, -50%)';
+    se.style.transformOrigin = 'center center';
     if (sobj && sobj.type === 'sticky') {
       se.style.width = Math.max(80, sobj.w * cam.zoom) + 'px';
       se.style.height = Math.max(80, sobj.h * cam.zoom) + 'px';
       se.style.fontSize = Math.max(10, sobj.fontSize * cam.zoom) + 'px';
       se.style.textAlign = sobj.textAlign || 'center';
+      se.style.fontWeight = sobj.fontWeight || '400';
+      se.style.fontStyle = sobj.fontStyle || 'normal';
+      se.style.textDecoration = sobj.underline ? 'underline' : 'none';
+      syncStickyEditorCenter(se);
     } else if (s.editId === 'new-sticky') {
       se.style.width = Math.max(80, (+se.dataset.w || 200 / cam.zoom) * cam.zoom) + 'px';
       se.style.height = Math.max(80, (+se.dataset.h || 200 / cam.zoom) * cam.zoom) + 'px';
       se.style.fontSize = Math.max(10, (+se.dataset.wfs || 16 / cam.zoom) * cam.zoom) + 'px';
       se.style.textAlign = 'center';
+      se.style.fontWeight = se.style.fontWeight || '400';
+      syncStickyEditorCenter(se);
     }
   }
+}
+
+export function syncStickyEditorCenter(ed) {
+  if (!ed || ed.style.display !== 'block') return;
+  var boxH = ed.clientHeight;
+  if (!boxH) return;
+  var boxW = ed.clientWidth || boxH;
+  var basePad = Math.max(8, Math.min(boxW, boxH) * 0.08);
+  ed.style.paddingLeft = basePad + 'px';
+  ed.style.paddingRight = basePad + 'px';
+  ed.style.paddingTop = basePad + 'px';
+  ed.style.paddingBottom = basePad + 'px';
+  var fontSize = parseFloat(ed.style.fontSize || window.getComputedStyle(ed).fontSize) || 16;
+  var lineHeight = fontSize * 1.5;
+  var maxWidth = Math.max(1, boxW - basePad * 2);
+  var measure = syncStickyEditorCenter._canvas || (syncStickyEditorCenter._canvas = document.createElement('canvas'));
+  var mc = measure.getContext('2d');
+  mc.font = '500 ' + fontSize + 'px Open Sans';
+  var lines = 0;
+  (ed.value || '').split('\n').forEach(function(line) {
+    lines += Math.max(1, wrapLine(mc, line, maxWidth).length);
+  });
+  var contentH = Math.max(lineHeight, lines * lineHeight);
+  var centeredPad = Math.max(basePad, (boxH - contentH) / 2);
+  ed.style.paddingTop = centeredPad + 'px';
+  ed.style.paddingBottom = centeredPad + 'px';
+}
+
+function resetStickyEditorCenter(ed) {
+  ed.style.paddingLeft = '';
+  ed.style.paddingRight = '';
+  ed.style.paddingTop = '';
+  ed.style.paddingBottom = '';
 }
 
 // ── Zoom ──

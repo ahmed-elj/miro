@@ -220,6 +220,9 @@ canvas#board {
   left: 16px;
   top: 50%;
   transform: translateY(-50%);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -280,6 +283,10 @@ canvas#board {
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100vw - 128px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -583,6 +590,9 @@ canvas#board {
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
+  scrollbar-width: thin;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -911,6 +921,86 @@ canvas#board {
 @media (max-width: 520px) {
   #viewBookmarksPanel {
     width: calc(100vw - 24px);
+  }
+}
+
+@media (max-width: 900px), (max-height: 700px) {
+  #boardMenu {
+    top: 10px;
+    left: 10px;
+  }
+
+  #boardMenuBtn {
+    height: 34px;
+    max-width: min(220px, calc(100vw - 20px));
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  #toolbar {
+    left: 10px;
+    padding: 5px;
+    border-radius: var(--radius-lg);
+    max-height: calc(100vh - 84px);
+  }
+
+  .tool-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .tool-sep {
+    width: 24px;
+    margin: 3px auto;
+  }
+
+  #topbar {
+    top: 10px;
+    max-width: calc(100vw - 92px);
+    padding: 5px 8px;
+    gap: 5px;
+  }
+
+  .color-swatch {
+    width: 18px;
+    height: 18px;
+  }
+
+  .stroke-btn,
+  .fill-toggle,
+  .action-btn {
+    width: 26px;
+    height: 26px;
+  }
+
+  .opt-sep {
+    height: 24px;
+  }
+
+  #bottombar {
+    bottom: 10px;
+    padding: 4px 6px;
+  }
+
+  .zoom-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  #zoomLevel {
+    min-width: 52px;
+    font-size: 11px;
+  }
+}
+
+@media (max-height: 520px) {
+  #toolbar {
+    top: 48px;
+    bottom: 48px;
+    transform: none;
+    max-height: none;
   }
 }
 

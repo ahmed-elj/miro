@@ -99,13 +99,38 @@ export function roundedRect(c, x, y, w, h, r) {
 export function wrapLine(c, text, maxWidth) {
   if (maxWidth <= 0) return [text];
   var words = text.split(' '), result = [], line = '';
+
+  function pushBrokenWord(word) {
+    if (!word) return;
+    var chunk = '';
+    for (var i = 0; i < word.length; i++) {
+      var test = chunk + word[i];
+      if (chunk && c.measureText(test).width > maxWidth) {
+        result.push(chunk);
+        chunk = word[i];
+      } else {
+        chunk = test;
+      }
+    }
+    if (chunk) result.push(chunk);
+  }
+
   for (var i = 0; i < words.length; i++) {
     var word = words[i];
     var test = line ? line + ' ' + word : word;
     if (c.measureText(test).width > maxWidth && line) {
       result.push(line);
       line = word;
+      if (c.measureText(line).width > maxWidth) {
+        pushBrokenWord(line);
+        line = '';
+      }
     } else {
+      if (!line && c.measureText(word).width > maxWidth) {
+        pushBrokenWord(word);
+        line = '';
+        continue;
+      }
       line = test;
     }
   }

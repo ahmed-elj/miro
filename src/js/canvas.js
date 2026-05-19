@@ -343,7 +343,9 @@ function drawStickyText(c, o) {
   var minR = 14, rS = Math.max(minR, o.fontSize), sc = o.fontSize / rS;
   var pad = Math.min(o.w, o.h) * 0.08;
   c.save(); c.translate(o.x + pad, o.y + pad); c.scale(sc, sc);
-  c.fillStyle = '#1a1a1f'; c.font = '500 ' + rS + 'px Open Sans'; c.textBaseline = 'top';
+  c.fillStyle = '#1a1a1f';
+  c.font = (o.fontStyle === 'italic' ? 'italic ' : '') + (o.fontWeight || 400) + ' ' + rS + 'px Open Sans';
+  c.textBaseline = 'top';
   c.textAlign = o.textAlign || 'center';
   var mxW = (o.w - pad * 2) / sc;
   var mxH = (o.h - pad * 2) / sc;
@@ -357,6 +359,17 @@ function drawStickyText(c, o) {
   var tx = c.textAlign === 'left' ? 0 : c.textAlign === 'right' ? mxW : mxW / 2;
   lines.forEach(function(line) {
     c.fillText(line, tx, cy);
+    if (o.underline) {
+      var tw = c.measureText(line).width;
+      var x1 = c.textAlign === 'center' ? tx - tw / 2 : c.textAlign === 'right' ? tx - tw : tx;
+      var y = cy + rS * 1.08;
+      c.strokeStyle = '#1a1a1f';
+      c.lineWidth = Math.max(1 / Math.max(0.001, cam.zoom * sc), rS * 0.05);
+      c.beginPath();
+      c.moveTo(x1, y);
+      c.lineTo(x1 + tw, y);
+      c.stroke();
+    }
     cy += lineH;
   });
   c.restore();

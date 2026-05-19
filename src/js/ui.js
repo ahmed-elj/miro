@@ -49,6 +49,7 @@ import {
   selectTopAt,
   updateEditorFS,
   updateEditorPosition,
+  syncStickyEditorCenter,
   cycleSelect,
   startBoxSelect,
   updateBoxSelect,
@@ -495,6 +496,8 @@ function updatePopup() {
       bottom: er.bottom,
     }, 140, getCaretRect(ed), 12);
     document.getElementById("popTextRow").style.display = "flex";
+    document.getElementById("popBulletList").style.display = "flex";
+    document.getElementById("popNumberList").style.display = "flex";
     syncPaletteRows(true, false);
     document.getElementById("popArrowRow").style.display = "none";
     document.getElementById("popGroupRow").style.display = "none";
@@ -643,6 +646,10 @@ function updatePopup() {
   closeCommentPanel();
   document.getElementById("popTextRow").style.display =
     selObj.type === "text" || selObj.type === "sticky" ? "flex" : "none";
+  document.getElementById("popBulletList").style.display =
+    selObj.type === "text" ? "flex" : "none";
+  document.getElementById("popNumberList").style.display =
+    selObj.type === "text" ? "flex" : "none";
   syncPaletteRows(
     ["path", "line", "arrow", "rect", "ellipse", "text"].indexOf(selObj.type) >= 0,
     selObj.type === "sticky",
@@ -698,9 +705,9 @@ function updatePopup() {
       selObj.fontSize * cam.zoom,
     );
   } else if (selObj.type === "sticky") {
-    document.getElementById("popBold").classList.remove("active");
-    document.getElementById("popItalic").classList.remove("active");
-    document.getElementById("popUnder").classList.remove("active");
+    document.getElementById("popBold").classList.toggle("active", (selObj.fontWeight || 400) >= 700);
+    document.getElementById("popItalic").classList.toggle("active", (selObj.fontStyle || "normal") === "italic");
+    document.getElementById("popUnder").classList.toggle("active", !!selObj.underline);
     document.getElementById("popAlignLeft").classList.toggle("active", (selObj.textAlign || "center") === "left");
     document.getElementById("popAlignCenter").classList.toggle("active", (selObj.textAlign || "center") === "center");
     document.getElementById("popAlignRight").classList.toggle("active", (selObj.textAlign || "center") === "right");
@@ -1363,9 +1370,11 @@ function setupPopupHandlers() {
       return;
     }
     var o = findObj(s.selectedId);
-    if (!o || o.type !== "text") return;
+    if (!o || (o.type !== "text" && o.type !== "sticky")) return;
     saveState();
-    if (o.spans) {
+    if (o.type === "sticky") {
+      o.fontWeight = (o.fontWeight || 400) >= 700 ? 400 : 700;
+    } else if (o.spans) {
       var hb = o.spans.some(function (sp) {
         return sp.bold;
       });
@@ -1382,9 +1391,11 @@ function setupPopupHandlers() {
       return;
     }
     var o = findObj(s.selectedId);
-    if (!o || o.type !== "text") return;
+    if (!o || (o.type !== "text" && o.type !== "sticky")) return;
     saveState();
-    if (o.spans) {
+    if (o.type === "sticky") {
+      o.fontStyle = o.fontStyle === "italic" ? "normal" : "italic";
+    } else if (o.spans) {
       var hi = o.spans.some(function (sp) {
         return sp.italic;
       });
@@ -1401,9 +1412,11 @@ function setupPopupHandlers() {
       return;
     }
     var o = findObj(s.selectedId);
-    if (!o || o.type !== "text") return;
+    if (!o || (o.type !== "text" && o.type !== "sticky")) return;
     saveState();
-    if (o.spans) {
+    if (o.type === "sticky") {
+      o.underline = !o.underline;
+    } else if (o.spans) {
       var hu = o.spans.some(function (sp) {
         return sp.underline;
       });
@@ -1469,7 +1482,7 @@ function setupPopupHandlers() {
       return;
     }
     var o2 = findObj(s.selectedId);
-    if (!o2 || o2.type !== "text") return;
+    if (!o2 || (o2.type !== "text" && o2.type !== "sticky")) return;
     saveState();
     o2.fontSize = Math.max(2 / cam.zoom, o2.fontSize * 0.8);
     requestRender();
@@ -1486,7 +1499,7 @@ function setupPopupHandlers() {
       return;
     }
     var o2 = findObj(s.selectedId);
-    if (!o2 || o2.type !== "text") return;
+    if (!o2 || (o2.type !== "text" && o2.type !== "sticky")) return;
     saveState();
     o2.fontSize *= 1.25;
     requestRender();
@@ -2789,6 +2802,11 @@ function setupPointerEvents() {
   window.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   document.getElementById("textEditor").addEventListener("input", function () {
+    requestRender();
+  });
+  document.getElementById("stickyEditor").addEventListener("input", function () {
+    var ed = this;
+    if (typeof syncStickyEditorCenter === "function") syncStickyEditorCenter(ed);
     requestRender();
   });
   document.addEventListener("selectionchange", function () {
