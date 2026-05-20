@@ -218,7 +218,7 @@ function remapObjectColorsForTheme(theme, recordUndo) {
   }
   objects.forEach(function (obj) {
     assign(obj, "color");
-    assign(obj, "fillColor");
+    if (obj.type !== "comment") assign(obj, "fillColor");
     if (obj.type === "text" && Array.isArray(obj.spans)) {
       obj.spans.forEach(function (span) {
         assign(span, "color");

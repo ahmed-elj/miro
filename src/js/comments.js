@@ -55,7 +55,7 @@ export function drawCommentBubble(ctx, obj) {
   ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
   ctx.shadowBlur = 5 / cam.zoom;
   ctx.shadowOffsetY = 2 / cam.zoom;
-  ctx.fillStyle = obj.fillColor || '#ffffff';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
