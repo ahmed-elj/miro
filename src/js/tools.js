@@ -459,6 +459,91 @@ function moveObjectBy(obj, snap, dx, dy) {
   }
 }
 
+function getSnapAxes(b) {
+  return {
+    x: [
+      { key: 'left', value: b.x },
+      { key: 'center', value: b.x + b.w / 2 },
+      { key: 'right', value: b.x + b.w },
+    ],
+    y: [
+      { key: 'top', value: b.y },
+      { key: 'middle', value: b.y + b.h / 2 },
+      { key: 'bottom', value: b.y + b.h },
+    ],
+  };
+}
+
+function getMovedBoundsFromSnapBounds(b, dx, dy) {
+  return { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h };
+}
+
+function snapMoveDelta(selectedIds, snapBounds, dx, dy) {
+  if (!snapBounds) {
+    state.snapGuides = [];
+    return { dx: dx, dy: dy };
+  }
+  var threshold = 6 / cam.zoom;
+  var moved = getMovedBoundsFromSnapBounds(snapBounds, dx, dy);
+  var movingAxes = getSnapAxes(moved);
+  var ignore = {};
+  selectedIds.forEach(function(id) { ignore[id] = true; });
+  var bestX = null;
+  var bestY = null;
+
+  objects.forEach(function(obj) {
+    if (!obj || ignore[obj.id]) return;
+    var target = getRotatedBounds(obj);
+    if (!target) return;
+    var targetAxes = getSnapAxes(target);
+    movingAxes.x.forEach(function(a) {
+      targetAxes.x.forEach(function(t) {
+        var diff = t.value - a.value;
+        if (Math.abs(diff) <= threshold && (!bestX || Math.abs(diff) < Math.abs(bestX.diff))) {
+          bestX = { diff: diff, value: t.value };
+        }
+      });
+    });
+    movingAxes.y.forEach(function(a) {
+      targetAxes.y.forEach(function(t) {
+        var diff = t.value - a.value;
+        if (Math.abs(diff) <= threshold && (!bestY || Math.abs(diff) < Math.abs(bestY.diff))) {
+          bestY = { diff: diff, value: t.value };
+        }
+      });
+    });
+  });
+
+  var guides = [];
+  if (bestX) {
+    dx += bestX.diff;
+    guides.push({ axis: 'x', value: bestX.value });
+  }
+  if (bestY) {
+    dy += bestY.diff;
+    guides.push({ axis: 'y', value: bestY.value });
+  }
+  state.snapGuides = guides;
+  return { dx: dx, dy: dy };
+}
+
+function normalizeAngle(angle) {
+  var full = Math.PI * 2;
+  angle = angle % full;
+  return angle < 0 ? angle + full : angle;
+}
+
+function snapRotationAngle(angle) {
+  var step = Math.PI / 4;
+  var threshold = Math.PI / 45;
+  var normalized = normalizeAngle(angle);
+  var snapped = Math.round(normalized / step) * step;
+  if (Math.abs(normalized - snapped) <= threshold || Math.abs(normalized - (snapped - Math.PI * 2)) <= threshold) {
+    return angle + (snapped - normalized);
+  }
+  return angle;
+}
+
 function normalizeArrowSnap(snap) {
   if (!snap || snap.type !== 'arrow') return snap;
   if (!Number.isFinite(snap.cpX) || !Number.isFinite(snap.cpY)) {
@@ -667,6 +752,11 @@ export function handleDrag(wp, freeResize) {
 
   // Multi-object move
   if (s.dragMode === 'move-multi' && s.multiDragSnaps) {
+    var multiSnapIds = Object.keys(s.multiDragSnaps).map(Number);
+    var multiSnapBounds = getGroupBoundsFromSnaps(s.multiDragSnaps, multiSnapIds);
+    var multiSnapped = snapMoveDelta(s.selectedIds, multiSnapBounds, dx, dy);
+    dx = multiSnapped.dx;
+    dy = multiSnapped.dy;
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
       var snap = s.multiDragSnaps[id];
@@ -687,7 +777,8 @@ export function handleDrag(wp, freeResize) {
     var cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
     var angle = Math.atan2(wp.y - cy, wp.x - cx);
     var delta = angle - s.dragRotStart;
-    obj.rotation = (s.dragSnap.rotation || 0) + delta;
+    obj.rotation = snapRotationAngle((s.dragSnap.rotation || 0) + delta);
+    s.snapGuides = [];
     requestRender();
     return;
   }
@@ -700,7 +791,10 @@ export function handleDrag(wp, freeResize) {
     var angle = Math.atan2(wp.y - gcy, wp.x - gcx);
     var desiredHandleAngle = angle - (s.dragRotPointerOffset || 0);
     var delta = desiredHandleAngle - s.dragRotStart;
-    s.groupRotation = (s.dragGroupRotation || 0) + delta;
+    var snappedGroupRotation = snapRotationAngle((s.dragGroupRotation || 0) + delta);
+    delta = snappedGroupRotation - (s.dragGroupRotation || 0);
+    s.groupRotation = snappedGroupRotation;
+    s.snapGuides = [];
     s.selectedIds.forEach(function(id) {
       var o = findObj(id);
       var snap = s.dragRotSnaps[id];
@@ -780,6 +874,11 @@ export function handleDrag(wp, freeResize) {
     var linkedIds = obj2.groupId ? getLinkedSelectionIds(obj2.id) : [obj2.id];
     if (linkedIds.length > 1) {
       if (!s.multiDragSnaps) snapshotMultiDrag(linkedIds);
+      var linkedSnapIds = Object.keys(s.multiDragSnaps).map(Number);
+      var linkedSnapBounds = getGroupBoundsFromSnaps(s.multiDragSnaps, linkedSnapIds);
+      var linkedSnapped = snapMoveDelta(linkedIds, linkedSnapBounds, dx, dy);
+      dx = linkedSnapped.dx;
+      dy = linkedSnapped.dy;
       linkedIds.forEach(function(id) {
         var linkedObj = findObj(id);
         var linkedSnap = s.multiDragSnaps[id];
@@ -833,8 +932,13 @@ export function handleDrag(wp, freeResize) {
   }
 
   if (s.dragMode === 'move') {
+    var snapBounds = getRotatedBounds(snap2);
+    var snapped = snapMoveDelta([obj2.id], snapBounds, dx, dy);
+    dx = snapped.dx;
+    dy = snapped.dy;
     moveObjectBy(obj2, snap2, dx, dy);
   } else if (s.dragMode.startsWith('resize-')) {
+    s.snapGuides = [];
     var ms = 10 / cam.zoom;
     if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image' || obj2.type === 'comment') {
       applyResize(obj2, snap2, dx, dy, ms, preserveAspect);

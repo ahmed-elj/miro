@@ -2918,8 +2918,10 @@ function onPointerDown(e) {
     return;
   }
   s.dragMode = null;
+  s.snapGuides = [];
   s.dragUndo = false;
   s.multiDragSnaps = null;
+  s.snapGuides = [];
   s.dragRotStart = null;
   s.dragRotSnaps = null;
   s.dragGroupBounds = null;
@@ -3091,6 +3093,7 @@ function onPointerUp(e) {
     s.dragMode = null;
     s.dragSW = null;
     s.dragSnap = null;
+    s.snapGuides = [];
     s.dragUndo = false;
     s.cycleHits = null;
     s.cycleIdx = -1;

@@ -41,6 +41,7 @@ function render() {
   }
   if (s.isDrawing) drawPreview(ctx);
   if (s.isBoxSelect) drawMarquee(ctx);
+  drawSnapGuides(ctx, w, h);
   if (s.groupEditId && !s.isEditing) drawGroupEditFrame(ctx);
   if (s.selectedIds.length > 1 && !s.isEditing) drawGroupHandles(ctx);
   else if (s.selectedId !== null && (!s.isEditing || s.editId === s.selectedId)) drawHandles(ctx);
@@ -474,6 +475,30 @@ function drawResizeHandles(c, b, hs, iz, accent) {
     c.fillStyle = accent; c.fillRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
     c.strokeStyle = '#141417'; c.lineWidth = 1.5 * iz; c.strokeRect(p.x - hs, p.y - hs, hs * 2, hs * 2);
   });
+}
+
+function drawSnapGuides(c, screenW, screenH) {
+  var guides = state.snapGuides || [];
+  if (!guides.length) return;
+  var tl = s2w(0, 0);
+  var br = s2w(screenW, screenH);
+  var iz = 1 / cam.zoom;
+  c.save();
+  c.strokeStyle = hexToRgba(state.settings.accentColor, 0.55);
+  c.lineWidth = 1.25 * iz;
+  c.setLineDash([7 * iz, 5 * iz]);
+  guides.forEach(function(guide) {
+    c.beginPath();
+    if (guide.axis === 'x') {
+      c.moveTo(guide.value, tl.y);
+      c.lineTo(guide.value, br.y);
+    } else {
+      c.moveTo(tl.x, guide.value);
+      c.lineTo(br.x, guide.value);
+    }
+    c.stroke();
+  });
+  c.restore();
 }
 
 function drawHandles(c) {

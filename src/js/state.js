@@ -51,6 +51,7 @@ export const state = {
   dragMode: null,
   dragSW: null,
   dragSnap: null,
+  snapGuides: [],
   dragUndo: false,
   cycleHits: null,
   cycleIdx: -1,
