@@ -326,11 +326,15 @@ export function hitHandle(obj, wx, wy) {
 
 export function getArrowTangentVector(obj, atEnd) {
   if (!obj || obj.type !== 'arrow') return null;
-  var cp = getArrowControlPoint(obj);
-  var p1 = cp;
-  var p2 = atEnd ? { x: obj.x2, y: obj.y2 } : { x: obj.x1, y: obj.y1 };
-  if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 0.001) return null;
-  return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+  if (atEnd) {
+    var fromEnd = getArrowCurvePoint(obj, 0.92);
+    if (Math.hypot(obj.x2 - fromEnd.x, obj.y2 - fromEnd.y) < 0.001) return null;
+    return { x1: fromEnd.x, y1: fromEnd.y, x2: obj.x2, y2: obj.y2 };
+  }
+
+  var fromStart = getArrowCurvePoint(obj, 0.08);
+  if (Math.hypot(obj.x1 - fromStart.x, obj.y1 - fromStart.y) < 0.001) return null;
+  return { x1: fromStart.x, y1: fromStart.y, x2: obj.x1, y2: obj.y1 };
 }
 
 // ── Compute the unified bounding box of a set of object IDs ──
