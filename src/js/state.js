@@ -92,6 +92,13 @@ export const state = {
   wheelMouseScore: 0,
   wheelTrackpadScore: 0,
   wheelModeToast: null,
+  toolWheel: {
+    active: false,
+    x: 0,
+    y: 0,
+    pointerId: null,
+    hoverTool: null,
+  },
 
   settings: {
     theme: DEFAULT_SETTINGS.theme,
@@ -99,6 +106,7 @@ export const state = {
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,
     bgPattern: DEFAULT_SETTINGS.bgPattern,
+    toolWheelTrigger: DEFAULT_SETTINGS.toolWheelTrigger,
     popupColorsExpanded: DEFAULT_SETTINGS.popupColorsExpanded,
     keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
   },

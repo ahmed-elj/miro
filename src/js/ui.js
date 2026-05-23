@@ -14,6 +14,9 @@ import {
   STORAGE_KEY,
   ROTATE_HANDLE_DIST,
   ROTATE_HANDLE_RADIUS,
+  TOOL_WHEEL_TOOLS,
+  TOOL_WHEEL_INNER_RADIUS,
+  TOOL_WHEEL_OUTER_RADIUS,
 } from "./constants.js";
 import { s2w, w2s, showToast, getArrowHeadMode } from "./utils.js";
 import { requestRender, drawObject } from "./canvas.js";
@@ -88,6 +91,63 @@ var DEFAULT_BOARD_ID = "default";
 var EMPTY_BOARD_THUMBNAIL = "";
 var highlightedBookmarkId = null;
 var bookmarkAutoCloseTimer = null;
+
+function getToolWheelHit(dx, dy) {
+  var dist = Math.hypot(dx, dy);
+  if (dist < TOOL_WHEEL_INNER_RADIUS || dist > TOOL_WHEEL_OUTER_RADIUS) return null;
+  var segCount = TOOL_WHEEL_TOOLS.length;
+  var segAngle = (Math.PI * 2) / segCount;
+  var angle = Math.atan2(dy, dx);
+  var normalized = angle - (-Math.PI / 2 - segAngle / 2);
+  normalized = ((normalized % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  var index = Math.floor(normalized / segAngle);
+  return TOOL_WHEEL_TOOLS[index] || null;
+}
+
+function updateToolWheel(sx, sy) {
+  var wheel = state.toolWheel;
+  var dx = sx - wheel.x;
+  var dy = sy - wheel.y;
+  var hit = getToolWheelHit(dx, dy);
+  var dist = Math.hypot(dx, dy);
+  var lineLen = Math.min(TOOL_WHEEL_OUTER_RADIUS, Math.max(0, dist));
+  var angle = dist > 0.001 ? Math.atan2(dy, dx) : 0;
+  wheel.x2 = wheel.x + Math.cos(angle) * lineLen;
+  wheel.y2 = wheel.y + Math.sin(angle) * lineLen;
+  wheel.hoverTool = hit ? hit.tool : null;
+  requestRender();
+}
+
+function shouldOpenToolWheel(e) {
+  var trigger = state.settings.toolWheelTrigger || DEFAULT_SETTINGS.toolWheelTrigger;
+  return trigger === "middle" || e.ctrlKey;
+}
+
+function startToolWheel(sx, sy, pointerId) {
+  var wheel = state.toolWheel;
+  wheel.active = true;
+  wheel.x = sx;
+  wheel.y = sy;
+  wheel.x2 = sx;
+  wheel.y2 = sy;
+  wheel.pointerId = pointerId;
+  wheel.hoverTool = null;
+  state.selectedId = null;
+  state.selectedIds = [];
+  closeCommentPanel();
+  requestRender();
+}
+
+function finishToolWheel(shouldSelect) {
+  var wheel = state.toolWheel;
+  if (!wheel.active) return;
+  var nextTool = shouldSelect ? wheel.hoverTool : null;
+  wheel.active = false;
+  wheel.pointerId = null;
+  wheel.hoverTool = null;
+  if (nextTool) setToolActive(nextTool);
+  else requestRender();
+}
 
 function codeToLabel(code) {
   if (!code) return "None";
@@ -264,11 +324,13 @@ function applySettingsToUI() {
   var canvasInput = document.getElementById("canvasColor");
   var gridInput = document.getElementById("gridColor");
   var patternInput = document.getElementById("bgPattern");
+  var toolWheelInput = document.getElementById("toolWheelTrigger");
   if (themeInput) themeInput.value = s.theme;
   if (accentInput) accentInput.value = s.accentColor;
   if (canvasInput) canvasInput.value = s.canvasColor;
   if (gridInput) gridInput.value = s.gridColor;
   if (patternInput) patternInput.value = s.bgPattern;
+  if (toolWheelInput) toolWheelInput.value = s.toolWheelTrigger;
   updateShortcutLabels();
   updateKeybindList();
   syncTopbarColorSelection();
@@ -2656,6 +2718,7 @@ function resetSettings() {
   state.settings.canvasColor = DEFAULT_SETTINGS.canvasColor;
   state.settings.gridColor = DEFAULT_SETTINGS.gridColor;
   state.settings.bgPattern = DEFAULT_SETTINGS.bgPattern;
+  state.settings.toolWheelTrigger = DEFAULT_SETTINGS.toolWheelTrigger;
   state.settings.popupColorsExpanded = DEFAULT_SETTINGS.popupColorsExpanded;
   state.settings.keyMap = Object.assign({}, DEFAULT_SETTINGS.keyMap);
   state.curColor = getDefaultObjectColor();
@@ -2752,6 +2815,10 @@ function setupOptions() {
   document.getElementById("bgPattern").addEventListener("change", function (e) {
     state.settings.bgPattern = e.target.value;
     requestRender();
+    saveToStorage();
+  });
+  document.getElementById("toolWheelTrigger").addEventListener("change", function (e) {
+    state.settings.toolWheelTrigger = e.target.value === "ctrl-middle" ? "ctrl-middle" : "middle";
     saveToStorage();
   });
   document.getElementById("boardMenuBtn").addEventListener("click", function (e) {
@@ -2932,8 +2999,19 @@ function onPointerDown(e) {
     sx = e.clientX - r.left,
     sy = e.clientY - r.top;
   var wp = s2w(sx, sy);
+  if (s.toolWheel && s.toolWheel.active) {
+    if (e.button === 1) {
+      e.preventDefault();
+      finishToolWheel(false);
+    }
+    return;
+  }
   if (e.button === 1) {
     e.preventDefault();
+    if (shouldOpenToolWheel(e)) {
+      startToolWheel(sx, sy, e.pointerId);
+      return;
+    }
     startPan(sx, sy);
     s.panButton = 1;
     return;
@@ -3015,6 +3093,12 @@ function onPointerMove(e) {
     requestRender();
     return;
   }
+  if (s.toolWheel && s.toolWheel.active) {
+    if (s.toolWheel.pointerId == null || s.toolWheel.pointerId === e.pointerId) {
+      updateToolWheel(sx, sy);
+    }
+    return;
+  }
   if (s.isBoxSelect) {
     updateBoxSelect(wp);
     return;
@@ -3055,6 +3139,13 @@ function onPointerUp(e) {
     s.rightPanStartedTool = null;
     if (shouldSuppressContextMenu) s.suppressContextMenuUntil = Date.now() + 700;
     updateCursor();
+    return;
+  }
+  if (s.toolWheel && s.toolWheel.active) {
+    if (s.toolWheel.pointerId == null || s.toolWheel.pointerId === e.pointerId) {
+      var shouldSelect = !!s.toolWheel.hoverTool;
+      finishToolWheel(shouldSelect);
+    }
     return;
   }
   if (s.isBoxSelect) {
@@ -3341,6 +3432,7 @@ function mergeSettings(saved) {
     canvasColor: DEFAULT_SETTINGS.canvasColor,
     gridColor: DEFAULT_SETTINGS.gridColor,
     bgPattern: DEFAULT_SETTINGS.bgPattern,
+    toolWheelTrigger: DEFAULT_SETTINGS.toolWheelTrigger,
     popupColorsExpanded: DEFAULT_SETTINGS.popupColorsExpanded,
     keyMap: Object.assign({}, DEFAULT_SETTINGS.keyMap),
   };
@@ -3350,6 +3442,7 @@ function mergeSettings(saved) {
       if (typeof saved[key] === "string" && /^#[0-9a-fA-F]{6}$/.test(saved[key])) next[key] = saved[key];
     });
     if (["dots", "grid", "none"].indexOf(saved.bgPattern) >= 0) next.bgPattern = saved.bgPattern;
+    if (saved.toolWheelTrigger === "middle" || saved.toolWheelTrigger === "ctrl-middle") next.toolWheelTrigger = saved.toolWheelTrigger;
     if (typeof saved.popupColorsExpanded === "boolean") next.popupColorsExpanded = saved.popupColorsExpanded;
     if (saved.keyMap && typeof saved.keyMap === "object") {
       next.keyMap = {};

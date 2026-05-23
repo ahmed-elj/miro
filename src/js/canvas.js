@@ -5,7 +5,14 @@
 import {
   cam, ctx, dpr, canvas, objects, imgCache, state,
 } from './state.js';
-import { HANDLE_SIZE, ROTATE_HANDLE_DIST, ROTATE_HANDLE_RADIUS } from './constants.js';
+import {
+  HANDLE_SIZE,
+  ROTATE_HANDLE_DIST,
+  ROTATE_HANDLE_RADIUS,
+  TOOL_WHEEL_TOOLS,
+  TOOL_WHEEL_INNER_RADIUS,
+  TOOL_WHEEL_OUTER_RADIUS,
+} from './constants.js';
 import { s2w, roundedRect, wrapLine, hexToRgba, getArrowCurvePoints, getArrowBendHandle, getArrowHeadMode, getArrowControlPoint } from './utils.js';
 import { getBounds, getGroupBounds, getRotatedBounds, getArrowTangentVector } from './objects.js';
 import { getTextLayout, measureTextLine, textFont } from './textLayout.js';
@@ -57,7 +64,196 @@ function render() {
     ctx.fillText('Scroll to zoom \u00B7 Space to pan \u00B7 Ctrl+Z to undo', w / 2, h / 2 + 30);
     ctx.textAlign = 'left';
   }
+  if (s.toolWheel && s.toolWheel.active) drawToolWheel(ctx);
   if (typeof window.__updatePopup === 'function') window.__updatePopup();
+}
+
+function drawToolWheel(c) {
+  var wheel = state.toolWheel;
+  var cx = wheel.x;
+  var cy = wheel.y;
+  var segCount = TOOL_WHEEL_TOOLS.length;
+  var segAngle = (Math.PI * 2) / segCount;
+  var baseAngle = -Math.PI / 2 - segAngle / 2;
+
+  c.save();
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  c.fillStyle = 'rgba(20, 20, 23, 0.72)';
+  c.beginPath();
+  c.arc(cx, cy, TOOL_WHEEL_OUTER_RADIUS + 22, 0, Math.PI * 2);
+  c.fill();
+
+  TOOL_WHEEL_TOOLS.forEach(function(meta, index) {
+    var a0 = baseAngle + index * segAngle;
+    var a1 = a0 + segAngle;
+    var isHover = wheel.hoverTool === meta.tool;
+
+    c.beginPath();
+    c.arc(cx, cy, TOOL_WHEEL_OUTER_RADIUS, a0, a1);
+    c.arc(cx, cy, TOOL_WHEEL_INNER_RADIUS, a1, a0, true);
+    c.closePath();
+    c.fillStyle = isHover ? 'rgba(16, 185, 129, 0.24)' : 'rgba(30, 30, 36, 0.94)';
+    c.fill();
+    c.strokeStyle = isHover ? 'rgba(16, 185, 129, 0.95)' : 'rgba(58, 58, 68, 0.95)';
+    c.lineWidth = isHover ? 2.5 : 1.25;
+    c.stroke();
+
+    var mid = a0 + segAngle / 2;
+    var labelRadius = (TOOL_WHEEL_INNER_RADIUS + TOOL_WHEEL_OUTER_RADIUS) / 2;
+    var tx = cx + Math.cos(mid) * labelRadius;
+    var ty = cy + Math.sin(mid) * labelRadius;
+
+    drawToolWheelIcon(c, meta.tool, tx, ty - 8, isHover);
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = isHover ? '#ffffff' : '#d7d7df';
+    c.font = '600 10px Open Sans';
+    c.fillText(meta.label, tx, ty + 18);
+  });
+
+  c.beginPath();
+  c.arc(cx, cy, TOOL_WHEEL_INNER_RADIUS - 10, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(20, 20, 23, 0.96)';
+  c.fill();
+  c.strokeStyle = 'rgba(58, 58, 68, 0.95)';
+  c.lineWidth = 1.25;
+  c.stroke();
+
+  if (wheel.hoverTool) {
+    c.beginPath();
+    c.moveTo(cx, cy);
+    c.lineTo(wheel.x2, wheel.y2);
+    c.strokeStyle = 'rgba(16, 185, 129, 0.95)';
+    c.lineWidth = 3;
+    c.stroke();
+
+    c.beginPath();
+    c.arc(wheel.x2, wheel.y2, 5.5, 0, Math.PI * 2);
+    c.fillStyle = '#10b981';
+    c.fill();
+  }
+
+  c.restore();
+}
+
+function drawToolWheelIcon(c, tool, x, y, active) {
+  var color = active ? '#d7fff0' : '#c8c8d2';
+  c.save();
+  c.translate(x, y);
+  c.scale(0.82, 0.82);
+  c.strokeStyle = color;
+  c.fillStyle = color;
+  c.lineWidth = 2.2;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+
+  if (tool === 'select') {
+    c.beginPath();
+    c.moveTo(-7, -10);
+    c.lineTo(7, 1);
+    c.lineTo(0, 3);
+    c.lineTo(4, 11);
+    c.lineTo(0, 13);
+    c.lineTo(-4, 5);
+    c.lineTo(-9, 10);
+    c.closePath();
+    c.fill();
+  } else if (tool === 'hand') {
+    c.beginPath();
+    c.moveTo(-8, 3);
+    c.lineTo(-8, -5);
+    c.moveTo(-3, 6);
+    c.lineTo(-3, -10);
+    c.moveTo(2, 6);
+    c.lineTo(2, -9);
+    c.moveTo(7, 5);
+    c.lineTo(7, -5);
+    c.stroke();
+    c.beginPath();
+    c.arc(0, 5, 9, 0.15, Math.PI - 0.15, true);
+    c.stroke();
+  } else if (tool === 'pen') {
+    c.beginPath();
+    c.moveTo(-8, 9);
+    c.lineTo(6, -7);
+    c.lineTo(10, -3);
+    c.lineTo(-4, 12);
+    c.closePath();
+    c.stroke();
+    c.beginPath();
+    c.moveTo(-8, 9);
+    c.lineTo(-11, 13);
+    c.lineTo(-4, 12);
+    c.stroke();
+  } else if (tool === 'eraser') {
+    c.beginPath();
+    c.moveTo(-9, 4);
+    c.lineTo(2, -8);
+    c.lineTo(10, -1);
+    c.lineTo(-1, 11);
+    c.closePath();
+    c.stroke();
+    c.beginPath();
+    c.moveTo(-4, 9);
+    c.lineTo(8, 9);
+    c.stroke();
+  } else if (tool === 'line') {
+    c.beginPath();
+    c.moveTo(-11, 8);
+    c.lineTo(11, -8);
+    c.stroke();
+  } else if (tool === 'arrow') {
+    c.beginPath();
+    c.moveTo(-11, 7);
+    c.lineTo(9, -7);
+    c.moveTo(2, -8);
+    c.lineTo(9, -7);
+    c.lineTo(7, 0);
+    c.stroke();
+  } else if (tool === 'rect') {
+    c.strokeRect(-10, -8, 20, 16);
+  } else if (tool === 'ellipse') {
+    c.beginPath();
+    c.ellipse(0, 0, 11, 8, 0, 0, Math.PI * 2);
+    c.stroke();
+  } else if (tool === 'text') {
+    c.font = '800 22px Open Sans';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('T', 0, 1);
+  } else if (tool === 'sticky') {
+    c.beginPath();
+    c.roundRect(-10, -9, 20, 18, 3);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(4, 9);
+    c.lineTo(10, 3);
+    c.lineTo(10, 9);
+    c.closePath();
+    c.stroke();
+  } else if (tool === 'comment') {
+    c.beginPath();
+    c.roundRect(-11, -8, 22, 15, 6);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(-3, 7);
+    c.lineTo(-7, 12);
+    c.lineTo(2, 7);
+    c.stroke();
+  } else if (tool === 'image') {
+    c.strokeRect(-11, -9, 22, 18);
+    c.beginPath();
+    c.arc(5, -4, 2, 0, Math.PI * 2);
+    c.moveTo(-9, 7);
+    c.lineTo(-3, 1);
+    c.lineTo(1, 5);
+    c.lineTo(5, 1);
+    c.lineTo(10, 7);
+    c.stroke();
+  }
+
+  c.restore();
 }
 
 function drawGrid(sw, sh) {

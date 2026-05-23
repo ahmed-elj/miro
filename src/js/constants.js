@@ -12,6 +12,24 @@ export const STICKY_COLORS = ['#fbbf24', '#fb923c', '#f87171', '#a78bfa', '#60a5
 
 export const STROKE_WIDTHS = [1, 2, 4, 8];
 
+export const TOOL_WHEEL_TOOLS = [
+  { tool: 'select', label: 'Select', mark: 'V' },
+  { tool: 'hand', label: 'Pan', mark: 'H' },
+  { tool: 'pen', label: 'Pen', mark: 'P' },
+  { tool: 'eraser', label: 'Eraser', mark: 'E' },
+  { tool: 'line', label: 'Line', mark: 'L' },
+  { tool: 'arrow', label: 'Arrow', mark: 'A' },
+  { tool: 'rect', label: 'Rect', mark: 'R' },
+  { tool: 'ellipse', label: 'Ellipse', mark: 'O' },
+  { tool: 'text', label: 'Text', mark: 'T' },
+  { tool: 'sticky', label: 'Sticky', mark: 'S' },
+  { tool: 'comment', label: 'Comment', mark: 'C' },
+  { tool: 'image', label: 'Image', mark: 'I' },
+];
+
+export const TOOL_WHEEL_INNER_RADIUS = 58;
+export const TOOL_WHEEL_OUTER_RADIUS = 148;
+
 export const MIN_ZOOM = 0.0001;
 export const MAX_ZOOM = 100000;
 
@@ -47,6 +65,7 @@ export const DEFAULT_SETTINGS = {
   canvasColor: '#1a1a1f',
   gridColor: '#28282f',
   bgPattern: 'dots',
+  toolWheelTrigger: 'middle',
   popupColorsExpanded: false,
   keyMap: Object.assign({}, KEY_MAP),
 };
