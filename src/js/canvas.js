@@ -46,7 +46,7 @@ function render() {
     }
     drawObject(ctx, objects[i]);
   }
-  if (s.isDrawing) drawPreview(ctx);
+  if (s.isDrawing || s.pendingPenPaths.length) drawPreview(ctx);
   if (s.isBoxSelect) drawMarquee(ctx);
   drawSnapGuides(ctx, w, h);
   if (s.groupEditId && !s.isEditing) drawGroupEditFrame(ctx);
@@ -54,7 +54,7 @@ function render() {
   else if (s.selectedId !== null && (!s.isEditing || s.editId === s.selectedId)) drawHandles(ctx);
   if (s.locateEnd > 0) drawLocateHighlights(ctx);
   ctx.restore();
-  if (!objects.length && !s.isDrawing) {
+  if (!objects.length && !s.isDrawing && !s.pendingPenPaths.length) {
     ctx.fillStyle = '#3a3a44';
     ctx.font = '500 18px Open Sans';
     ctx.textAlign = 'center';
@@ -604,17 +604,11 @@ function drawImageObj(c, o) {
 
 function drawPreview(c) {
   var s = state;
+  for (var p = 0; p < s.pendingPenPaths.length; p++) {
+    drawPenPreview(c, s.pendingPenPaths[p].points, s.pendingPenPaths[p].color, s.pendingPenPaths[p].strokeWidth);
+  }
   if (s.curTool === 'pen' && s.curPath.length >= 2) {
-    c.save();
-    c.strokeStyle = s.curColor; c.lineWidth = s.curStroke / cam.zoom;
-    c.lineCap = 'round'; c.lineJoin = 'round';
-    c.beginPath(); c.moveTo(s.curPath[0].x, s.curPath[0].y);
-    for (var i = 1; i < s.curPath.length - 1; i++) {
-      var mx = (s.curPath[i].x + s.curPath[i+1].x) / 2, my = (s.curPath[i].y + s.curPath[i+1].y) / 2;
-      c.quadraticCurveTo(s.curPath[i].x, s.curPath[i].y, mx, my);
-    }
-    c.lineTo(s.curPath[s.curPath.length - 1].x, s.curPath[s.curPath.length - 1].y);
-    c.stroke(); c.restore();
+    drawPenPreview(c, s.curPath, s.curColor, s.curStroke / cam.zoom);
     return;
   }
   if (!s.drawSt || !s.drawCur) return;
@@ -650,6 +644,24 @@ function drawPreview(c) {
     c.ellipse(x + w / 2, y + h / 2, Math.max(0.1, w / 2), Math.max(0.1, h / 2), 0, 0, Math.PI * 2);
     c.stroke();
   }
+  c.restore();
+}
+
+function drawPenPreview(c, points, color, strokeWidth) {
+  if (!points || points.length < 2) return;
+  c.save();
+  c.strokeStyle = color;
+  c.lineWidth = strokeWidth;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  c.beginPath();
+  c.moveTo(points[0].x, points[0].y);
+  for (var i = 1; i < points.length - 1; i++) {
+    var mx = (points[i].x + points[i + 1].x) / 2, my = (points[i].y + points[i + 1].y) / 2;
+    c.quadraticCurveTo(points[i].x, points[i].y, mx, my);
+  }
+  c.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+  c.stroke();
   c.restore();
 }
 

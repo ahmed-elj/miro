@@ -11,6 +11,8 @@ import { getSpans, parseHtmlSpans, spansToHtml } from './editor.js';
 import { saveState, addObj, findObj } from './undo.js';
 import { createCommentBubble, openCommentPanel } from './comments.js';
 
+var PEN_COMMIT_DELAY = 2000;
+
 function getLinkedSelectionIds(id) {
   var obj = findObj(id);
   if (!obj || !obj.groupId) return [id];
@@ -1118,11 +1120,36 @@ export function finishPen() {
   if (s.curPath.length >= 2) {
     var pts = s.curPath.map(function(p) { return { x: p.x, y: p.y }; });
     var sw = s.curStroke / cam.zoom;
-    addPenPath(pts, s.curColor, sw);
+    queuePenPathCommit(pts, s.curColor, sw);
   }
   s.curPath = [];
   s.drawSt = null;
   s.drawCur = null;
+}
+
+export function clearPendingPenCommits() {
+  state.pendingPenPaths.forEach(function(pending) {
+    if (pending.timer) clearTimeout(pending.timer);
+  });
+  state.pendingPenPaths = [];
+}
+
+function queuePenPathCommit(points, color, strokeWidth) {
+  var pending = {
+    points: points,
+    color: color,
+    strokeWidth: strokeWidth,
+    timer: null,
+  };
+  pending.timer = setTimeout(function() {
+    var idx = state.pendingPenPaths.indexOf(pending);
+    if (idx < 0) return;
+    state.pendingPenPaths.splice(idx, 1);
+    addPenPath(points, color, strokeWidth);
+    requestRender();
+  }, PEN_COMMIT_DELAY);
+  state.pendingPenPaths.push(pending);
+  requestRender();
 }
 
 function addPenPath(points, color, strokeWidth) {
@@ -1600,9 +1627,10 @@ function animateLocate() {
 }
 
 export function clearAll() {
-  if (!objects.length) return;
-  saveState();
+  if (!objects.length && !state.pendingPenPaths.length) return;
+  if (objects.length) saveState();
   objects.length = 0;
+  clearPendingPenCommits();
   state.selectedId = null;
   state.selectedIds = [];
   state.groupEditId = null;

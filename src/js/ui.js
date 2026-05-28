@@ -36,6 +36,7 @@ import {
   startPan,
   startPen,
   finishPen,
+  clearPendingPenCommits,
   startErase,
   eraseAt,
   finishErase,
@@ -1826,8 +1827,16 @@ function setupTopbar() {
     s.fillOn = !s.fillOn;
     this.classList.toggle("active", s.fillOn);
   });
-  document.getElementById("undoBtn").addEventListener("click", undo);
-  document.getElementById("redoBtn").addEventListener("click", redo);
+  document.getElementById("undoBtn").addEventListener("click", function() {
+    clearPendingPenCommits();
+    undo();
+    requestRender();
+  });
+  document.getElementById("redoBtn").addEventListener("click", function() {
+    clearPendingPenCommits();
+    redo();
+    requestRender();
+  });
   document.getElementById("clearBtn").addEventListener("click", clearAll);
 }
 
@@ -2384,6 +2393,7 @@ function renderBoardList() {
 
 function applyBoardData(data, fallbackSettings) {
   if (!data || !Array.isArray(data.objects)) return false;
+  clearPendingPenCommits();
   objects.length = 0;
   data.objects.forEach(function (o) { objects.push(o); });
   state.nid = data.nid || 1;
@@ -2443,6 +2453,7 @@ function createNewBoard() {
   openNameDialog("New board", "Untitled Board", function (name) {
     var id = nextBoardId();
     state.currentBoardId = id;
+    clearPendingPenCommits();
     objects.length = 0;
     state.nid = 1;
     state.viewBookmarks = [];
@@ -2522,6 +2533,7 @@ function requestDeleteBoard(id) {
 
 function createEmptyDefaultBoard() {
   state.currentBoardId = DEFAULT_BOARD_ID;
+  clearPendingPenCommits();
   objects.length = 0;
   state.nid = 1;
   state.viewBookmarks = [];
@@ -3360,15 +3372,21 @@ function setupKeyboard() {
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
+      clearPendingPenCommits();
       undo();
+      requestRender();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) {
       e.preventDefault();
+      clearPendingPenCommits();
       redo();
+      requestRender();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "y") {
       e.preventDefault();
+      clearPendingPenCommits();
       redo();
+      requestRender();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "=") {
       e.preventDefault();

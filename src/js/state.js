@@ -46,6 +46,7 @@ export const state = {
   drawSt: null,
   drawCur: null,
   curPath: [],
+  pendingPenPaths: [],
   arrowPreviewBend: 0,
 
   dragMode: null,
