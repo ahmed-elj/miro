@@ -727,6 +727,83 @@ function isSideResizeMode(dm) {
   return dm === 'resize-t' || dm === 'resize-r' || dm === 'resize-b' || dm === 'resize-l';
 }
 
+function getHandlePoint(b, key) {
+  switch (key) {
+    case 'tl': return { x: b.x, y: b.y };
+    case 't': return { x: b.x + b.w / 2, y: b.y };
+    case 'tr': return { x: b.x + b.w, y: b.y };
+    case 'r': return { x: b.x + b.w, y: b.y + b.h / 2 };
+    case 'br': return { x: b.x + b.w, y: b.y + b.h };
+    case 'b': return { x: b.x + b.w / 2, y: b.y + b.h };
+    case 'bl': return { x: b.x, y: b.y + b.h };
+    case 'l': return { x: b.x, y: b.y + b.h / 2 };
+  }
+  return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+}
+
+function getResizeAnchorKey(dm) {
+  return {
+    'resize-br': 'tl',
+    'resize-bl': 'tr',
+    'resize-tr': 'bl',
+    'resize-tl': 'br',
+    'resize-r': 'l',
+    'resize-l': 'r',
+    'resize-b': 't',
+    'resize-t': 'b',
+  }[dm] || null;
+}
+
+function rotateVector(x, y, angle) {
+  var cos = Math.cos(angle), sin = Math.sin(angle);
+  return { x: x * cos - y * sin, y: x * sin + y * cos };
+}
+
+function applyRotatedBoxResize(o, snap, pointer, minSize, preserveAspect) {
+  var dm = state.dragMode;
+  var b = getBounds(snap);
+  var anchorKey = getResizeAnchorKey(dm);
+  if (!b || !anchorKey) return false;
+  var rot = snap.rotation || 0;
+  var center = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  var anchorLocal = getHandlePoint(b, anchorKey);
+  var anchorWorld = rotateAroundPoint(anchorLocal.x, anchorLocal.y, center.x, center.y, rot);
+  var delta = rotateVector(pointer.x - anchorWorld.x, pointer.y - anchorWorld.y, -rot);
+  var newW = b.w;
+  var newH = b.h;
+
+  if (dm === 'resize-br' || dm === 'resize-tr' || dm === 'resize-r') newW = delta.x;
+  if (dm === 'resize-bl' || dm === 'resize-tl' || dm === 'resize-l') newW = -delta.x;
+  if (dm === 'resize-br' || dm === 'resize-bl' || dm === 'resize-b') newH = delta.y;
+  if (dm === 'resize-tr' || dm === 'resize-tl' || dm === 'resize-t') newH = -delta.y;
+
+  newW = Math.max(minSize, newW);
+  newH = Math.max(minSize, newH);
+  if (preserveAspect && !isSideResizeMode(dm)) {
+    var size = getAspectResizeSize(b.w, b.h, newW, newH, minSize);
+    newW = size.w;
+    newH = size.h;
+  }
+
+  var centerOffset = {
+    tl: { x: newW / 2, y: newH / 2 },
+    tr: { x: -newW / 2, y: newH / 2 },
+    bl: { x: newW / 2, y: -newH / 2 },
+    br: { x: -newW / 2, y: -newH / 2 },
+    l: { x: newW / 2, y: 0 },
+    r: { x: -newW / 2, y: 0 },
+    t: { x: 0, y: newH / 2 },
+    b: { x: 0, y: -newH / 2 },
+  }[anchorKey];
+  var rotatedOffset = rotateVector(centerOffset.x, centerOffset.y, rot);
+  var nextCenter = { x: anchorWorld.x + rotatedOffset.x, y: anchorWorld.y + rotatedOffset.y };
+  o.x = nextCenter.x - newW / 2;
+  o.y = nextCenter.y - newH / 2;
+  o.w = newW;
+  o.h = newH;
+  return true;
+}
+
 function getTextBaseScale(snap) {
   return Math.max(0.05, snap.scaleX || 1, snap.scaleY || 1);
 }
@@ -747,10 +824,10 @@ function applyTextUniformScale(obj, snap, scale) {
 }
 
 // ── Drag handling ──
-export function handleDrag(wp, freeResize) {
+export function handleDrag(wp, preserveAspectKey) {
   var s = state;
   var dx = wp.x - s.dragSW.x, dy = wp.y - s.dragSW.y;
-  var preserveAspect = !freeResize;
+  var preserveAspect = !!preserveAspectKey;
 
   // Multi-object move
   if (s.dragMode === 'move-multi' && s.multiDragSnaps) {
@@ -922,6 +999,28 @@ export function handleDrag(wp, freeResize) {
     return;
   }
 
+  var resizeMinSize = 10 / cam.zoom;
+  if (
+    s.dragMode &&
+    s.dragMode.startsWith('resize-') &&
+    (snap2.rotation || 0) &&
+    (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image' || obj2.type === 'comment' || obj2.type === 'sticky')
+  ) {
+    s.snapGuides = [];
+    if (obj2.type === 'sticky') {
+      resizeMinSize = 40 / cam.zoom;
+      var stickyW = snap2.w, stickyH = snap2.h;
+      if (applyRotatedBoxResize(obj2, snap2, wp, resizeMinSize, preserveAspect) && stickyW > 0 && stickyH > 0) {
+        var stickyScaleX = obj2.w / stickyW, stickyScaleY = obj2.h / stickyH;
+        obj2.fontSize = snap2.fontSize * ((stickyScaleX + stickyScaleY) / 2);
+      }
+    } else {
+      applyRotatedBoxResize(obj2, snap2, wp, resizeMinSize, preserveAspect);
+    }
+    requestRender();
+    return;
+  }
+
   if (s.dragMode && s.dragMode.startsWith('resize-') && (snap2.rotation || 0)) {
     var rb = getBounds(snap2);
     if (rb) {
@@ -941,7 +1040,7 @@ export function handleDrag(wp, freeResize) {
     moveObjectBy(obj2, snap2, dx, dy);
   } else if (s.dragMode.startsWith('resize-')) {
     s.snapGuides = [];
-    var ms = 10 / cam.zoom;
+    var ms = resizeMinSize;
     if (obj2.type === 'rect' || obj2.type === 'ellipse' || obj2.type === 'image' || obj2.type === 'comment') {
       applyResize(obj2, snap2, dx, dy, ms, preserveAspect);
     } else if (obj2.type === 'sticky') {

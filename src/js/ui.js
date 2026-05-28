@@ -3132,7 +3132,7 @@ function onPointerMove(e) {
       saveState();
       s.dragUndo = true;
     }
-    handleDrag(wp, e.ctrlKey);
+    handleDrag(wp, e.shiftKey);
   }
 }
 
