@@ -84,6 +84,9 @@ var TOOL_META = [
   { tool: "image", label: "Image" },
 ];
 
+var OBJECT_CLIPBOARD_MIME = "application/x-infinite-whiteboard-objects";
+var OBJECT_CLIPBOARD_TEXT = "Infinite Whiteboard objects";
+
 var MAX_VIEW_BOOKMARKS = 20;
 var VIEW_BOOKMARK_THUMB_W = 160;
 var VIEW_BOOKMARK_THUMB_H = 96;
@@ -907,6 +910,70 @@ function getSelectedIds() {
 
 function getSelectedObjects() {
   return getSelectedIds().map(function (id) { return findObj(id); }).filter(Boolean);
+}
+
+function isEditableTarget(target) {
+  return !!(
+    target &&
+    target.closest &&
+    target.closest("input, textarea, select, [contenteditable]")
+  );
+}
+
+function shouldHandleObjectClipboard(e) {
+  if (state.isEditing || state.isPan) return false;
+  if (isEditableTarget(e.target)) return false;
+  if (
+    e.target &&
+    e.target.closest &&
+    e.target.closest("#commentPanel, #nameDialogBackdrop, #confirmDialogBackdrop, #viewBookmarksPanel")
+  ) return false;
+  return true;
+}
+
+function serializeClipboardObjects(items) {
+  return JSON.stringify({
+    app: "infinite-whiteboard",
+    version: 1,
+    objects: items.map(cloneForClipboard),
+  });
+}
+
+function parseClipboardObjects(raw) {
+  if (!raw) return [];
+  try {
+    var data = JSON.parse(raw);
+    if (!data || data.app !== "infinite-whiteboard" || !Array.isArray(data.objects)) return [];
+    return data.objects.filter(function (obj) {
+      return obj && typeof obj === "object" && typeof obj.type === "string";
+    }).map(cloneForClipboard);
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeClipboardObjects(clipboardData, items) {
+  if (!clipboardData || !items || !items.length) return false;
+  var payload = serializeClipboardObjects(items);
+  var wrote = false;
+  try {
+    clipboardData.setData(OBJECT_CLIPBOARD_MIME, payload);
+    wrote = true;
+  } catch (err) {}
+  try {
+    clipboardData.setData("text/plain", OBJECT_CLIPBOARD_TEXT);
+  } catch (err2) {}
+  return wrote;
+}
+
+function readClipboardObjects(clipboardData) {
+  if (!clipboardData) return [];
+  var raw = clipboardData.getData(OBJECT_CLIPBOARD_MIME);
+  return parseClipboardObjects(raw);
+}
+
+function isObjectClipboardText(text) {
+  return (text || "").trim() === OBJECT_CLIPBOARD_TEXT;
 }
 
 function selectObjectForContext(obj) {
@@ -2937,27 +3004,65 @@ function setupPointerEvents() {
       insertImg(f, s2w(e.clientX - r.left, e.clientY - r.top));
     }
   });
+  window.addEventListener("copy", function (e) {
+    if (!shouldHandleObjectClipboard(e)) return;
+    var selected = getSelectedObjects();
+    if (!selected.length) return;
+    state.clipboardObjects = selected.map(cloneForClipboard);
+    writeClipboardObjects(e.clipboardData, state.clipboardObjects);
+    e.preventDefault();
+    showToast("Copied");
+  });
+  window.addEventListener("cut", function (e) {
+    if (!shouldHandleObjectClipboard(e)) return;
+    var selected = getSelectedObjects();
+    if (!selected.length) return;
+    var unlocked = selected.filter(function (obj) { return !obj.locked; });
+    if (!unlocked.length) {
+      e.preventDefault();
+      showToast("Unlock object first");
+      return;
+    }
+    writeClipboardObjects(e.clipboardData, unlocked);
+    if (cutSelection()) e.preventDefault();
+  });
   window.addEventListener("paste", function (e) {
+    var shouldPasteInternal = state.pendingInternalPaste;
     state.pendingInternalPaste = false;
-    if (s.isEditing || s.isPan || e.pointerType || !e.clipboardData) return;
+    if (s.isEditing || s.isPan || isEditableTarget(e.target) || e.pointerType || !e.clipboardData) return;
+    var clipboardObjects = readClipboardObjects(e.clipboardData);
+    if (clipboardObjects.length) {
+      e.preventDefault();
+      state.clipboardObjects = clipboardObjects;
+      pasteClipboard(getPastePoint());
+      return;
+    }
     var items = e.clipboardData && e.clipboardData.items;
-    if (!items) return;
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith("image/")) {
-        e.preventDefault();
-        insertImg(
-          items[i].getAsFile(),
-          getPastePoint(),
-        );
-        return;
+    if (items) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          e.preventDefault();
+          insertImg(
+            items[i].getAsFile(),
+            getPastePoint(),
+          );
+          return;
+        }
       }
     }
     var text = e.clipboardData.getData("text/plain");
+    if (isObjectClipboardText(text)) {
+      e.preventDefault();
+      if (state.clipboardObjects && state.clipboardObjects.length) {
+        pasteClipboard(getPastePoint());
+      }
+      return;
+    }
     if (text && pasteTextFromOS(text)) {
       e.preventDefault();
       return;
     }
-    if (state.pendingInternalPaste && state.clipboardObjects && state.clipboardObjects.length) {
+    if (shouldPasteInternal && state.clipboardObjects && state.clipboardObjects.length) {
       e.preventDefault();
       pasteClipboard(getPastePoint());
     }
@@ -3334,15 +3439,7 @@ function setupKeyboard() {
       setToolActive(KEY_MAP[e.code]);
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
-      if (copySelection()) e.preventDefault();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
-      if (cutSelection()) e.preventDefault();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v" && !isEditableTarget(e.target)) {
       state.pendingInternalPaste = true;
       setTimeout(function () {
         if (state.pendingInternalPaste) {
