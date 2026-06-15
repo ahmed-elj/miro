@@ -916,30 +916,138 @@ export function handleDrag(wp, preserveAspectKey) {
 
   // Multi-object group resize
   if (s.dragMode && s.dragMode.startsWith('resize-') && s.multiDragSnaps && s.selectedIds.length > 1) {
-    var gb2 = s.dragGroupBounds || getGroupBounds(s.selectedIds);
-    if (!gb2 || gb2.w < 0.01 || gb2.h < 0.01) return;
     var snapIds = Object.keys(s.multiDragSnaps).map(Number);
-    var snapGb = getGroupBoundsFromSnaps(s.multiDragSnaps, snapIds);
-    if (!snapGb || snapGb.w < 0.01 || snapGb.h < 0.01) return;
+    var groupRot = s.groupRotation || 0;
+
+    var localAX = Infinity, localAY = Infinity, localBX = -Infinity, localBY = -Infinity;
+    snapIds.forEach(function(id) {
+      var sn = s.multiDragSnaps[id];
+      if (!sn) return;
+      var ub = getBounds(sn);
+      if (!ub) return;
+      localAX = Math.min(localAX, ub.x);
+      localAY = Math.min(localAY, ub.y);
+      localBX = Math.max(localBX, ub.x + ub.w);
+      localBY = Math.max(localBY, ub.y + ub.h);
+    });
+    if (localAX >= localBX || localAY >= localBY) return;
+    var localGb = { x: localAX, y: localAY, w: localBX - localAX, h: localBY - localAY };
+
+    var resizeDx = dx, resizeDy = dy;
+    if (groupRot) {
+      var grCx = localGb.x + localGb.w / 2, grCy = localGb.y + localGb.h / 2;
+      var localStart = inverseRotatePoint(s.dragSW.x, s.dragSW.y, grCx, grCy, groupRot);
+      var localCur = inverseRotatePoint(wp.x, wp.y, grCx, grCy, groupRot);
+      resizeDx = localCur.x - localStart.x;
+      resizeDy = localCur.y - localStart.y;
+    }
 
     var dm = s.dragMode;
-    var geom = getResizeGeometry(snapGb, dm, dx, dy);
-    var anchorX = geom.anchorX, anchorY = geom.anchorY;
-    var sx = Math.max(0.05, geom.newW / snapGb.w);
-    var sy = Math.max(0.05, geom.newH / snapGb.h);
+    var geom = getResizeGeometry(localGb, dm, resizeDx, resizeDy);
+    var localAnchorX = geom.anchorX, localAnchorY = geom.anchorY;
+    var sx = Math.max(0.05, geom.newW / localGb.w);
+    var sy = Math.max(0.05, geom.newH / localGb.h);
     if (preserveAspect && !isSideResizeMode(dm)) {
-      var constrained = constrainResizeScales(snapGb.w, snapGb.h, sx, sy, 0.05);
+      var constrained = constrainResizeScales(localGb.w, localGb.h, sx, sy, 0.05);
       sx = constrained.sx;
       sy = constrained.sy;
     }
+
+    var grCx2 = localGb.x + localGb.w / 2, grCy2 = localGb.y + localGb.h / 2;
 
     s.selectedIds.forEach(function(id) {
       var obj = findObj(id);
       var snap = s.multiDragSnaps[id];
       if (obj && obj.locked) return;
       if (!obj || !snap) return;
-      scaleObjectTo(obj, snap, anchorX, anchorY, sx, sy);
+
+      if (groupRot) {
+        function scalePt(wx, wy) {
+          var lp = inverseRotatePoint(wx, wy, grCx2, grCy2, groupRot);
+          var slx = localAnchorX + (lp.x - localAnchorX) * sx;
+          var sly = localAnchorY + (lp.y - localAnchorY) * sy;
+          return rotateAroundPoint(slx, sly, grCx2, grCy2, groupRot);
+        }
+        if (obj.type === 'path') {
+          obj.points = snap.points.map(function(p) { return scalePt(p.x, p.y); });
+        } else if (obj.type === 'line' || obj.type === 'arrow') {
+          var p1 = scalePt(snap.x1, snap.y1);
+          var p2 = scalePt(snap.x2, snap.y2);
+          obj.x1 = p1.x; obj.y1 = p1.y;
+          obj.x2 = p2.x; obj.y2 = p2.y;
+          if (obj.type === 'arrow' && Number.isFinite(snap.cpX)) {
+            var cp = scalePt(snap.cpX, snap.cpY);
+            obj.cpX = cp.x; obj.cpY = cp.y;
+          }
+        } else if (obj.type === 'text') {
+          var np = scalePt(snap.x, snap.y);
+          obj.x = np.x; obj.y = np.y;
+        } else {
+          var tl = scalePt(snap.x, snap.y);
+          var br = scalePt(snap.x + snap.w, snap.y + snap.h);
+          obj.x = Math.min(tl.x, br.x);
+          obj.y = Math.min(tl.y, br.y);
+          obj.w = Math.max(10 / cam.zoom, Math.abs(br.x - tl.x));
+          obj.h = Math.max(10 / cam.zoom, Math.abs(br.y - tl.y));
+        }
+        if (obj.type === 'sticky') {
+          obj.fontSize = snap.fontSize * Math.max(0.05, (sx + sy) / 2);
+        }
+      } else {
+        scaleObjectTo(obj, snap, localAnchorX, localAnchorY, sx, sy);
+      }
     });
+
+    if (groupRot) {
+      var newLocalAX = Infinity, newLocalAY = Infinity, newLocalBX = -Infinity, newLocalBY = -Infinity;
+      s.selectedIds.forEach(function(id) {
+        var obj = findObj(id);
+        if (!obj) return;
+        var nb = getBounds(obj);
+        if (!nb) return;
+        newLocalAX = Math.min(newLocalAX, nb.x);
+        newLocalAY = Math.min(newLocalAY, nb.y);
+        newLocalBX = Math.max(newLocalBX, nb.x + nb.w);
+        newLocalBY = Math.max(newLocalBY, nb.y + nb.h);
+      });
+      if (newLocalAX < newLocalBX && newLocalAY < newLocalBY) {
+        var newLocalCx = (newLocalAX + newLocalBX) / 2;
+        var newLocalCy = (newLocalAY + newLocalBY) / 2;
+        var anchorWorldBefore = rotateAroundPoint(localAnchorX, localAnchorY, grCx2, grCy2, groupRot);
+        var anchorWorldAfter = rotateAroundPoint(localAnchorX, localAnchorY, newLocalCx, newLocalCy, groupRot);
+        var rawDx = anchorWorldBefore.x - anchorWorldAfter.x;
+        var rawDy = anchorWorldBefore.y - anchorWorldAfter.y;
+        if (Math.abs(rawDx) > 0.001 || Math.abs(rawDy) > 0.001) {
+          var cosR = Math.cos(groupRot), sinR = Math.sin(groupRot);
+          var oneMinusCos = 1 - cosR;
+          var det = oneMinusCos * oneMinusCos + sinR * sinR;
+          var corrX, corrY;
+          if (det > 0.0001) {
+            corrX = (rawDx * oneMinusCos - rawDy * sinR) / det;
+            corrY = (rawDx * sinR + rawDy * oneMinusCos) / det;
+          } else {
+            corrX = rawDx;
+            corrY = rawDy;
+          }
+          s.selectedIds.forEach(function(id) {
+            var obj = findObj(id);
+            if (!obj || obj.locked) return;
+            if (obj.type === 'path') {
+              obj.points = obj.points.map(function(p) { return { x: p.x + corrX, y: p.y + corrY }; });
+            } else if (obj.type === 'line' || obj.type === 'arrow') {
+              obj.x1 += corrX; obj.y1 += corrY;
+              obj.x2 += corrX; obj.y2 += corrY;
+              if (obj.type === 'arrow' && Number.isFinite(obj.cpX)) {
+                obj.cpX += corrX; obj.cpY += corrY;
+              }
+            } else {
+              obj.x += corrX; obj.y += corrY;
+            }
+          });
+        }
+      }
+    }
+
     requestRender();
     return;
   }
@@ -1046,7 +1154,33 @@ export function handleDrag(wp, preserveAspectKey) {
     } else if (obj2.type === 'sticky') {
       applyStickyResize(obj2, snap2, dx, dy, preserveAspect);
     } else if (obj2.type === 'text') {
+      var textRot = snap2.rotation || 0;
+      var textAnchorWorld = null;
+      if (textRot) {
+        var textB = getBounds(snap2);
+        if (textB) {
+          var textAk = getResizeAnchorKey(s.dragMode);
+          if (textAk) {
+            var textCx = textB.x + textB.w / 2, textCy = textB.y + textB.h / 2;
+            var textAnchorLocal = getHandlePoint(textB, textAk);
+            textAnchorWorld = rotateAroundPoint(textAnchorLocal.x, textAnchorLocal.y, textCx, textCy, textRot);
+          }
+        }
+      }
       applyTextResize(obj2, snap2, dx, dy, preserveAspect);
+      if (textRot && textAnchorWorld) {
+        var newTextB = getBounds(obj2);
+        if (newTextB) {
+          var newTextCx = newTextB.x + newTextB.w / 2, newTextCy = newTextB.y + newTextB.h / 2;
+          var newTextAk = getResizeAnchorKey(s.dragMode);
+          if (newTextAk) {
+            var newTextAnchorLocal = getHandlePoint(newTextB, newTextAk);
+            var newTextAnchorWorld = rotateAroundPoint(newTextAnchorLocal.x, newTextAnchorLocal.y, newTextCx, newTextCy, textRot);
+            obj2.x += textAnchorWorld.x - newTextAnchorWorld.x;
+            obj2.y += textAnchorWorld.y - newTextAnchorWorld.y;
+          }
+        }
+      }
     } else if (obj2.type === 'line' || obj2.type === 'arrow') {
       if (isSideResizeMode(s.dragMode)) {
         var lineBounds = getBounds(snap2);
@@ -1107,7 +1241,22 @@ export function handleDrag(wp, preserveAspectKey) {
         sx2 = pc.sx;
         sy2 = pc.sy;
       }
+      var pathRot = snap2.rotation || 0;
+      var pathAnchorWorld = null;
+      if (pathRot) {
+        var pathCx = b.x + b.w / 2, pathCy = b.y + b.h / 2;
+        pathAnchorWorld = rotateAroundPoint(ox, oy, pathCx, pathCy, pathRot);
+      }
       obj2.points = snap2.points.map(function(p) { return { x: ox + (p.x - ox) * sx2, y: oy + (p.y - oy) * sy2 }; });
+      if (pathRot && pathAnchorWorld) {
+        var newPathB = getBounds(obj2);
+        if (newPathB) {
+          var newPCx = newPathB.x + newPathB.w / 2, newPCy = newPathB.y + newPathB.h / 2;
+          var newAnchorW = rotateAroundPoint(ox, oy, newPCx, newPCy, pathRot);
+          var pAdjX = pathAnchorWorld.x - newAnchorW.x, pAdjY = pathAnchorWorld.y - newAnchorW.y;
+          obj2.points = obj2.points.map(function(p) { return { x: p.x + pAdjX, y: p.y + pAdjY }; });
+        }
+      }
     }
   }
   requestRender();
